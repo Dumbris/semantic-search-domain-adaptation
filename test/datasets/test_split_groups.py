@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import sys
 from search_eval.datasets import split_groups
 
 def test_no_data():
