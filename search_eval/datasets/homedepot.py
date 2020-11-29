@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 
 from search_eval.datasets import base
+from search_eval.datasets import split_groups
 from pathlib import Path
 
 def ensure_file_exists(path:Path):
@@ -12,11 +13,8 @@ def ensure_file_exists(path:Path):
     return path
 
 class HomeDepotDataset(base.Dataset):
-    def __init__(self, queries, judgements, docs, seed=42):
-        self.queries = queries
-        self.rng = np.random.RandomState(seed)
-
-    def import_from_disk(self, dirpath:Path):
+    @classmethod
+    def import_from_disk(cls, dirpath:Path):
         if not dirpath.is_dir():
             raise Exception(f"Invalid path {dirpath}")
         solution_file = ensure_file_exists(dirpath / Path("solution.csv"))
@@ -29,6 +27,7 @@ class HomeDepotDataset(base.Dataset):
         df_train = pd.read_csv(str(train_file), encoding="ISO-8859-1")
         df_test_ = pd.read_csv(str(test_file), encoding="ISO-8859-1")
         df_test = pd.merge(df_test_, df_solution, how='left', on='id')
+        df_test = df_test[df_test.relevance != -1]
         df_pro_desc = pd.read_csv(str(product_descriptions))
         df_attr = pd.read_csv(attributes)
         df_brand = df_attr[df_attr.name == "MFG Brand Name"][["product_uid", "value"]].rename(columns={"value": "brand"})
@@ -37,12 +36,10 @@ class HomeDepotDataset(base.Dataset):
         df_all = pd.merge(df_all, df_pro_desc, how='left', on='product_uid')
         df_all = pd.merge(df_all, df_brand, how='left', on='product_uid')
 
-        #transform data
-        
-        pass
+        df_all.to_csv(dirpath / Path("df_all.csv"))
 
-    def load_from_cache(self, dir:Path):
-        pass
-        
-    def save_to_cache(self, dir:Path):
-        pass
+        #build dataset object
+        queries = df_all.search_term.values
+        docs = df_all.product_title.values
+        relevance = df_all.relevance.values
+        return cls(queries, docs, relevance)

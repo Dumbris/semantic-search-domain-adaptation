@@ -111,3 +111,4 @@ Pipfile
 *.code-workspace
 .env
 /data
+/*.npz
