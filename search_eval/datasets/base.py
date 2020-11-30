@@ -3,7 +3,6 @@
 
 import numpy as np
 
-from search_eval.datasets import split_groups
 from pathlib import Path
 import numbers
 
@@ -16,6 +15,7 @@ class Dataset:
             raise Exception(f"Queries, Docs length mismatch {self.queries.shape[0]} != {self.docs.shape[0]}")
         self.queries_uniq, self.judgements = np.unique(self.queries, return_inverse=True)
         self.queries_idx = np.arange(self.queries_uniq.shape[0])
+        self.docs_idx = np.arange(self.docs.shape[0]) #TODO: Do we need it? 
 
     def __repr__(self):
         return f"""queries\t{self.queries_uniq}\t{self.queries_uniq.shape}\n \
@@ -58,8 +58,8 @@ class Dataset:
         return n_test_groups
 
     def __len__(self):
-        return self.queries.shape[0]
+        return self.queries_uniq.shape[0]
 
     def __getitem__(self, idx):
         mask = self.judgements == idx
-        return self.queries_uniq[idx], self.docs[mask], self.relevance[mask]
+        return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
