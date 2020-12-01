@@ -65,7 +65,8 @@ class Dataset:
             return cls(self.queries[slice_idx], self.docs[slice_idx], self.relevance[slice_idx])
         elif isinstance(idx, numbers.Integral):
             mask = self.judgements == idx
-            return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
+            return self.queries_uniq[idx], self.docs[mask], self.relevance[mask]
+            #return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
         else:
             msg = '{cls.__name__} indeces must be integers'
             raise TypeError(msg.format(cls=cls))

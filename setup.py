@@ -6,6 +6,9 @@ from setuptools import setup, find_packages
 install_requires = [
     'numpy',
     'pandas',
+    'spacy',
+    'rank_bm25',
+    'joblib'
 ]
 
 if sys.version_info < (2, 7):
