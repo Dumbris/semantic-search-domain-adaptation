@@ -17,13 +17,6 @@ class Dataset:
         self.queries_idx = np.arange(self.queries_uniq.shape[0])
         self.docs_idx = np.arange(self.docs.shape[0]) #TODO: Do we need it? 
 
-    def __repr__(self):
-        return f"""queries\t{self.queries_uniq}\t{self.queries_uniq.shape}\n \
-                judgements\t{self.judgements}\t{self.judgements.shape}
-                relevance\t{self.relevance}\t{self.relevance.shape}
-                docs\t{self.docs}\t{self.docs.shape}
-                """
-
     @classmethod
     def load_from_cache(cls, filename:Path):
         npzfile = np.load(str(filename), allow_pickle=True)
@@ -57,9 +50,22 @@ class Dataset:
             raise Exception("n_test_groups must be int of float")
         return n_test_groups
 
+    def __repr__(self):
+        class_name = type(self).__name__
+        return f"""{class_name}:\nqueries {self.queries_uniq.shape}\t{self.queries_uniq}\n \
+                docs {self.docs.shape}\t{self.docs}\n
+                """
     def __len__(self):
         return self.queries_uniq.shape[0]
 
     def __getitem__(self, idx):
-        mask = self.judgements == idx
-        return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
+        cls = type(self)
+        if isinstance(idx, slice):
+            slice_idx = np.flatnonzero(np.in1d(self.judgements, self.queries_idx[idx]))
+            return cls(self.queries[slice_idx], self.docs[slice_idx], self.relevance[slice_idx])
+        elif isinstance(idx, numbers.Integral):
+            mask = self.judgements == idx
+            return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
+        else:
+            msg = '{cls.__name__} indeces must be integers'
+            raise TypeError(msg.format(cls=cls))
