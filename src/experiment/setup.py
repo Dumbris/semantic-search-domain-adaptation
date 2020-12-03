@@ -8,7 +8,7 @@ install_requires = [
     'pandas',
     'spacy',
     'rank_bm25',
-    'hydra'
+    'hydra-core'
 ]
 
 if sys.version_info < (2, 7):
@@ -44,7 +44,7 @@ setup(
     test_suite='tests',
     entry_points = {
         'console_scripts': [
-            'eval_cli=experiment.main:main',
+            'eval_cli=experiment.main:entry',
         ]
     }
 )
