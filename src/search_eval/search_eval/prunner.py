@@ -49,12 +49,6 @@ model = bm25.BM25()
 model.build_index(hd_corpus[ds_test.docs].tolist())
 
 
-def chunker(iterable, total_length, chunksize):
-    return (iterable[pos: pos + chunksize] for pos in range(0, total_length, chunksize))
-
-def flatten(list_of_lists):
-    "Flatten a list of lists to a combined list"
-    return [item for sublist in list_of_lists for item in sublist]
 
 def process_chunk(data):
     docs_idx_actual = []
@@ -81,5 +75,5 @@ def preprocess_parallel(data, chunksize=10):
 
 
 #print(process_chunk(ds_test))
-res = preprocess_parallel(ds_test, 100)
+res = preprocess_parallel(ds_test, 500)
 print(np.mean(np.array(res)))

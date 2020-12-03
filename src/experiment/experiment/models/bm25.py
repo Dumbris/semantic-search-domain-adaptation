@@ -3,7 +3,7 @@ from tqdm import tqdm
 import numpy as np
 from search_eval.models import base
 from typing import List
-from models.preprocessing import Preprocess
+from experiment.models.preprocessing import Preprocess
 
 
 class BM25(base.Model):

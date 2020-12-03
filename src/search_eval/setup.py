@@ -5,9 +5,7 @@ from setuptools import setup, find_packages
 
 install_requires = [
     'numpy',
-    'pandas',
-    'spacy',
-    'rank_bm25',
+    'tqdm',
     'joblib'
 ]
 
@@ -41,10 +39,5 @@ setup(
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ),
-    test_suite='tests',
-    entry_points = {
-        'console_scripts': [
-            'eval_cli=search_eval.cli.eval_cli:main_script',
-        ]
-    }
+    test_suite='test',
 )
