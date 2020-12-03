@@ -1,0 +1,11 @@
+# @package _group_
+process: 
+  seed: 42
+  batch: 500
+dataset:
+  dir_path: "data/home_depot"
+  cache_path: "hd_cache.npz"
+  corpus_path: "hd_corpus.npy"
+  test_size: 0.50
+models:
+  bm25: test_size

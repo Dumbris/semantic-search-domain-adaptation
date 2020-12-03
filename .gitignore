@@ -112,3 +112,4 @@ Pipfile
 .env
 /data
 /*.npz
+outputs/

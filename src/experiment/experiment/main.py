@@ -2,6 +2,7 @@
 """
 
 import sys
+import os
 from pathlib import Path
 import numpy as np
 from search_eval.datasets import base
@@ -10,13 +11,13 @@ from search_eval.metrics import mapk
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
 from tqdm import tqdm
-from search_eval.progressparallel import process_parallel
+from search_eval.progressparallel import process_parallel, flatten
 from experiment import homedepot
 import logging
 from functools import partial
+from omegaconf import DictConfig, OmegaConf
+import hydra
 
-
-np.random.seed(42)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
@@ -24,11 +25,16 @@ logger = logging.getLogger()
 class Experiment:
     def __init__(self, cfg):
         self.cfg = cfg
+        self.dataset, self.corpus = self.load_dataset()
+        self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
+        self.model = bm25.BM25()
+        self.model.build_index(self.corpus[self.ds_test.docs].tolist())
 
     def load_dataset(self):
-        data_path = Path("./data/home_depot")
-        cache_path = data_path / Path("hd_cache.npz")
-        corpus_path = data_path / Path("hd_corpus.npy")
+        orig_dir = Path(hydra.utils.get_original_cwd())
+        data_path = orig_dir / Path(self.cfg.dataset.dir_path)
+        cache_path = orig_dir / Path(self.cfg.dataset.cache_path)
+        corpus_path = orig_dir / Path(self.cfg.dataset.corpus_path)
         hd_corpus = None
         if cache_path.is_file():
             logger.info(f"Loading cache {cache_path}")
@@ -36,7 +42,7 @@ class Experiment:
             hd_corpus = np.load(corpus_path, allow_pickle=True)
         else:
             logger.info(f"Cache {cache_path} not found build cache from raw data first.")
-            queries, hd_corpus, relevance = homedepot.import_from_disk(Path(data_path))
+            queries, hd_corpus, relevance = homedepot.import_from_disk(data_path)
             docs_idx = np.arange(hd_corpus.shape[0])
             np.save(corpus_path, hd_corpus, allow_pickle=True)
             hd = base.Dataset(queries, docs_idx, relevance)
@@ -47,20 +53,25 @@ class Experiment:
         res = []
         for query, docs, rels in data:
             scores, idx = self.model.generate_candidates(query, 10)
-            res.append(mapk.apk(docs, ds_test.docs[idx], 10))
+            res.append(mapk.apk(docs, self.ds_test.docs[idx], 10))
         return res
 
 def container_fun(experiment_obj, data):
-    experiment_obj.run(data)
+    return experiment_obj.process(data)
 
 
-def main():
-    hd, hd_corpus = load_dataset()
-    ds_test, ds_train = hd.split_train_test(0.005)
-    model = bm25.BM25()
-    model.build_index(hd_corpus[ds_test.docs].tolist())
-    process_parallel(partial(process, model), ds_test, 400)
+@hydra.main(config_name="config.yaml")
+def main(cfg: DictConfig):
+    
+    logger.info(OmegaConf.to_yaml(cfg))
+    np.random.seed(cfg.process.seed)
+    e = Experiment(cfg)
+    res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
+    #logger.info(res)
+    logger.info(np.mean(np.array(flatten(res))))
 
+def entry():
+    main()
 
 if __name__ == "__main__":
     main()
