@@ -25,34 +25,39 @@ logger = logging.getLogger()
 class Experiment:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.dataset, self.corpus = self.load_dataset()
+        self.dataset, self.docs_corpus, self.queries_corpus = self.load_dataset()
         self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
         self.model = bm25.BM25()
-        self.model.build_index(self.corpus[self.ds_test.docs].tolist())
+        self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
 
     def load_dataset(self):
         orig_dir = Path(hydra.utils.get_original_cwd())
         data_path = orig_dir / Path(self.cfg.dataset.dir_path)
         cache_path = orig_dir / Path(self.cfg.dataset.cache_path)
-        corpus_path = orig_dir / Path(self.cfg.dataset.corpus_path)
-        hd_corpus = None
+        docs_corpus_path = orig_dir / Path(self.cfg.dataset.docs_corpus_path)
+        queries_corpus_path = orig_dir / Path(self.cfg.dataset.queries_corpus_path)
+        docs_corpus = None
+        queries_corpus = None
         if cache_path.is_file():
             logger.info(f"Loading cache {cache_path}")
             hd = base.Dataset.load_from_cache(cache_path)
-            hd_corpus = np.load(corpus_path, allow_pickle=True)
+            docs_corpus = np.load(docs_corpus_path, allow_pickle=True)
+            queries_corpus = np.load(queries_corpus_path, allow_pickle=True)
         else:
             logger.info(f"Cache {cache_path} not found build cache from raw data first.")
-            queries, hd_corpus, relevance = homedepot.import_from_disk(data_path)
-            docs_idx = np.arange(hd_corpus.shape[0])
-            np.save(corpus_path, hd_corpus, allow_pickle=True)
-            hd = base.Dataset(queries, docs_idx, relevance)
+            queries_corpus, docs_corpus, relevance = homedepot.import_from_disk(data_path)
+            docs_idx = np.arange(docs_corpus.shape[0])
+            np.save(docs_corpus_path, docs_corpus, allow_pickle=True)
+            queries_corpus, queries_idx = np.unique(queries_corpus, return_inverse=True)
+            np.save(queries_corpus_path, queries_corpus, allow_pickle=True)
+            hd = base.Dataset(queries_idx, docs_idx, relevance)
             hd.save_to_cache(cache_path)
-        return hd, hd_corpus
+        return hd, docs_corpus, queries_corpus
 
     def process(self, data):
         res = []
         for query, docs, rels in data:
-            scores, idx = self.model.generate_candidates(query, 10)
+            scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
             res.append(mapk.apk(docs, self.ds_test.docs[idx], 10))
         return res
 
