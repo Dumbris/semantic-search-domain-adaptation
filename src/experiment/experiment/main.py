@@ -8,6 +8,7 @@ import numpy as np
 from search_eval.datasets import base
 from experiment.models import bm25
 from search_eval.metrics import mapk
+from search_eval.models import oracle
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -27,8 +28,10 @@ class Experiment:
         self.cfg = cfg
         self.dataset, self.docs_corpus, self.queries_corpus = self.load_dataset()
         self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
-        self.model = bm25.BM25()
-        self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
+        #self.model = bm25.BM25()
+        #self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
+        self.model = oracle.Oracle()
+        self.model.build_index(self.ds_test)
 
     def load_dataset(self):
         orig_dir = Path(hydra.utils.get_original_cwd())
@@ -57,7 +60,8 @@ class Experiment:
     def process(self, data):
         res = []
         for query, docs, rels in data:
-            scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
+            #scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
+            scores, idx = self.model.generate_candidates(query, 10)
             res.append(mapk.apk(docs, self.ds_test.docs[idx], 10))
         return res
 
