@@ -15,6 +15,7 @@ from tqdm import tqdm
 from search_eval.progressparallel import process_parallel, flatten
 from experiment import homedepot
 import logging
+from collections import defaultdict
 from functools import partial
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -23,15 +24,17 @@ import hydra
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
 
+TRANSLATE_IDS = True
+
 class Experiment:
     def __init__(self, cfg):
         self.cfg = cfg
         self.dataset, self.docs_corpus, self.queries_corpus = self.load_dataset()
         self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
-        #self.model = bm25.BM25()
-        #self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
-        self.model = oracle.Oracle()
-        self.model.build_index(self.ds_test)
+        self.model = bm25.BM25()
+        self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
+        #self.model = oracle.Oracle()
+        #self.model.build_index(self.ds_test)
 
     def load_dataset(self):
         orig_dir = Path(hydra.utils.get_original_cwd())
@@ -58,30 +61,42 @@ class Experiment:
         return hd, docs_corpus, queries_corpus
 
     def process(self, data):
-        res = []
+        res = {"apk":[], "ndcg":[]}
         for query, docs, rels in data:
-            #scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
-            scores, idx = self.model.generate_candidates(query, 10)
-            ids_pred = self.ds_test.docs[idx]
+            if TRANSLATE_IDS:
+                #for bm25 model we need to translate ids
+                scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
+                ids_pred = self.ds_test.docs[idx]
+            else:
+                scores, idx = self.model.generate_candidates(query, 10)
+                ids_pred = idx
             _apk = mapk.apk(docs, ids_pred, 10)
             _ndcg = ndcg.ndcg(rels, docs, scores, ids_pred, 10)
-            res.append((_apk, _ndcg))
+            res["apk"].append(_apk)
+            res["ndcg"].append(_ndcg)
         return res
 
 def container_fun(experiment_obj, data):
     return experiment_obj.process(data)
 
+def merge_metrics(arr):
+    res = defaultdict(list)
+    for run_result in arr:
+        for k, v in run_result.items():
+            res[k].extend(v)
+    return res
 
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
-    
-    logger.info(OmegaConf.to_yaml(cfg))
     np.random.seed(cfg.process.seed)
     e = Experiment(cfg)
     logger.info(f"Test size {len(e.ds_test)}")
+    #res = e.process(e.ds_test)
     res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
-    logger.info(res)
-    #logger.info(np.mean(np.array(flatten(res))))
+    metrics = merge_metrics(res)
+    for name, vals in metrics.items():
+        val = np.mean(np.array(vals))
+        logger.info(f"{name}: {val}")
 
 def entry():
     main()
