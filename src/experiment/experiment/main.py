@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import numpy as np
 from search_eval.datasets import base
-from experiment.models import bm25
+from experiment.models import bm25, sentence_trans
 from search_eval.metrics import mapk, ndcg
 from search_eval.models import oracle
 from tqdm.auto import tqdm
@@ -25,16 +25,15 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
 
 TRANSLATE_IDS = True
+USE_PARALLEL  = False
 
 class Experiment:
-    def __init__(self, cfg):
+    def __init__(self, cfg, model):
         self.cfg = cfg
         self.dataset, self.docs_corpus, self.queries_corpus = self.load_dataset()
         self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
-        self.model = bm25.BM25()
+        self.model = model
         self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
-        #self.model = oracle.Oracle()
-        #self.model.build_index(self.ds_test)
 
     def load_dataset(self):
         orig_dir = Path(hydra.utils.get_original_cwd())
@@ -61,7 +60,7 @@ class Experiment:
         return hd, docs_corpus, queries_corpus
 
     def process(self, data):
-        res = {"apk":[], "ndcg":[]}
+        res = defaultdict(list)
         for query, docs, rels in data:
             if TRANSLATE_IDS:
                 #for bm25 model we need to translate ids
@@ -70,10 +69,9 @@ class Experiment:
             else:
                 scores, idx = self.model.generate_candidates(query, 10)
                 ids_pred = idx
-            _apk = mapk.apk(docs, ids_pred, 10)
-            _ndcg = ndcg.ndcg(rels, docs, scores, ids_pred, 10)
-            res["apk"].append(_apk)
-            res["ndcg"].append(_ndcg)
+            for k in [3,5,10]:
+                res[f"apk@{k}"].append(mapk.apk(docs, ids_pred, k))
+                res[f"ndcg@{k}"].append(ndcg.ndcg(rels, docs, scores, ids_pred, k))
         return res
 
 def container_fun(experiment_obj, data):
@@ -89,11 +87,17 @@ def merge_metrics(arr):
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
     np.random.seed(cfg.process.seed)
-    e = Experiment(cfg)
+    model = sentence_trans.SentTrans('distilroberta-base-msmarco-v2')
+    #model = bm25.BM25()
+    #model = oracle.Oracle()
+    #model.build_index(self.ds_test)
+    e = Experiment(cfg, model)
     logger.info(f"Test size {len(e.ds_test)}")
-    #res = e.process(e.ds_test)
-    res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
-    metrics = merge_metrics(res)
+    if USE_PARALLEL:
+        res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
+        metrics = merge_metrics(res)
+    else:
+        metrics = e.process(e.ds_test)
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))
         logger.info(f"{name}: {val}")

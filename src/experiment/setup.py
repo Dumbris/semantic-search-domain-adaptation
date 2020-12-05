@@ -8,7 +8,9 @@ install_requires = [
     'pandas',
     'spacy',
     'rank_bm25',
-    'hydra-core'
+    'hydra-core',
+    'sentence_transformers', 
+    'scipy'
 ]
 
 if sys.version_info < (2, 7):
