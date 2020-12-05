@@ -30,4 +30,4 @@ def ndcg(y_true, ids_true, y_pred, ids_pred, rank=10):
     ranked_y_pred = np.sort(y_pred)[::-1]
     #np.where(np.in1d(ranked_ids_pred, ranked_ids_true), ranked_ids_pred, 0), 
     relevances = np.where(np.in1d(ranked_ids_pred, ranked_ids_true), ranked_y_pred, 0)
-    return _ndcg(relevances) 
+    return _ndcg(relevances, rank) 
