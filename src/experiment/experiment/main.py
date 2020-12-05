@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from search_eval.datasets import base
 from experiment.models import bm25
-from search_eval.metrics import mapk
+from search_eval.metrics import mapk, ndcg
 from search_eval.models import oracle
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
@@ -62,7 +62,10 @@ class Experiment:
         for query, docs, rels in data:
             #scores, idx = self.model.generate_candidates(self.queries_corpus[query], 10)
             scores, idx = self.model.generate_candidates(query, 10)
-            res.append(mapk.apk(docs, self.ds_test.docs[idx], 10))
+            ids_pred = self.ds_test.docs[idx]
+            _apk = mapk.apk(docs, ids_pred, 10)
+            _ndcg = ndcg.ndcg(rels, docs, scores, ids_pred, 10)
+            res.append((_apk, _ndcg))
         return res
 
 def container_fun(experiment_obj, data):
@@ -75,9 +78,10 @@ def main(cfg: DictConfig):
     logger.info(OmegaConf.to_yaml(cfg))
     np.random.seed(cfg.process.seed)
     e = Experiment(cfg)
+    logger.info(f"Test size {len(e.ds_test)}")
     res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
-    #logger.info(res)
-    logger.info(np.mean(np.array(flatten(res))))
+    logger.info(res)
+    #logger.info(np.mean(np.array(flatten(res))))
 
 def entry():
     main()
