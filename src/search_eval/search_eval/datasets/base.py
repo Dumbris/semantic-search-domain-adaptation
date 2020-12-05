@@ -8,6 +8,7 @@ import numbers
 
 class Dataset:
     def __init__(self, queries, docs, relevance):
+        self.cur_indx = 0
         self.queries = np.asarray(queries)
         self.docs = np.asarray(docs)
         self.relevance = np.asarray(relevance)
@@ -55,6 +56,11 @@ class Dataset:
         return f"""{class_name}:\nqueries {self.queries_uniq.shape}\t{self.queries_uniq}\n \
                 docs {self.docs.shape}\t{self.docs}\n
                 """
+    def get_item_by_query_id(self, idx):
+        idx = np.argwhere(self.queries_uniq == idx)[0] #get judgements index
+        mask = self.judgements == idx
+        return self.queries_uniq[idx][0], self.docs[mask], self.relevance[mask]
+
     def __len__(self):
         return self.queries_uniq.shape[0]
 
@@ -64,9 +70,17 @@ class Dataset:
             slice_idx = np.flatnonzero(np.in1d(self.judgements, self.queries_idx[idx]))
             return cls(self.queries[slice_idx], self.docs[slice_idx], self.relevance[slice_idx])
         elif isinstance(idx, numbers.Integral):
-            mask = self.judgements == idx
-            return self.queries_uniq[idx], self.docs[mask], self.relevance[mask]
-            #return self.queries_uniq[idx], self.docs_idx[mask], self.relevance[mask]
+            return self.get_item_by_query_id(idx)
         else:
             msg = '{cls.__name__} indeces must be integers'
             raise TypeError(msg.format(cls=cls))
+    
+    def __iter__(self):
+        self.cur_indx = 0
+        return self
+
+    def __next__(self):
+        if self.cur_indx >= self.queries_uniq.shape[0]: raise StopIteration
+        tmp = self.get_item_by_query_id(self.queries_uniq[self.cur_indx])
+        self.cur_indx += 1
+        return tmp
