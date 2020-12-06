@@ -3,6 +3,7 @@
 
 import sys
 import os
+import importlib
 from pathlib import Path
 import numpy as np
 from search_eval.datasets import base
@@ -74,6 +75,17 @@ class Experiment:
                 res[f"ndcg@{k}"].append(ndcg.ndcg(rels, docs, scores, ids_pred, k))
         return res
 
+    def process2(self, data):
+        res = defaultdict(list)
+        queries = self.queries_corpus[data.queries_uniq]
+        for (scores, idx), item in zip(self.model.generate_candidates(queries, 10), data):
+            query, docs, rels = item
+            ids_pred = self.ds_test.docs[idx]
+            for k in [3,5,10]:
+                res[f"apk@{k}"].append(mapk.apk(docs, ids_pred, k))
+                res[f"ndcg@{k}"].append(ndcg.ndcg(rels, docs, scores, ids_pred, k))
+        return res
+
 def container_fun(experiment_obj, data):
     return experiment_obj.process(data)
 
@@ -97,7 +109,7 @@ def main(cfg: DictConfig):
         res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
         metrics = merge_metrics(res)
     else:
-        metrics = e.process(e.ds_test)
+        metrics = e.process2(e.ds_test[:3])
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))
         logger.info(f"{name}: {val}")

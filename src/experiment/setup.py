@@ -10,7 +10,8 @@ install_requires = [
     'rank_bm25',
     'hydra-core',
     'sentence_transformers', 
-    'scipy'
+    'scipy',
+    'hnswlib'
 ]
 
 if sys.version_info < (2, 7):
