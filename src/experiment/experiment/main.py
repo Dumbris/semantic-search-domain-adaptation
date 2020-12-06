@@ -79,7 +79,7 @@ class Experiment:
         res = defaultdict(list)
         queries = self.queries_corpus[data.queries_uniq]
         for (scores, idx), item in zip(self.model.generate_candidates(queries, 10), data):
-            query, docs, rels = item
+            _, docs, rels = item
             ids_pred = self.ds_test.docs[idx]
             for k in [3,5,10]:
                 res[f"apk@{k}"].append(mapk.apk(docs, ids_pred, k))
@@ -109,7 +109,7 @@ def main(cfg: DictConfig):
         res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
         metrics = merge_metrics(res)
     else:
-        metrics = e.process2(e.ds_test[:3])
+        metrics = e.process2(e.ds_test)
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))
         logger.info(f"{name}: {val}")
