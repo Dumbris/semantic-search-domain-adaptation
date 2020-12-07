@@ -10,3 +10,5 @@ dataset:
   test_size: 0.5
 models:
   bm25: test_size
+  senttrans:
+    model_path: "mymodel.bin" #'distilroberta-base-msmarco-v2'

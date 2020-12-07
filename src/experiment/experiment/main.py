@@ -34,7 +34,6 @@ class Experiment:
         self.dataset, self.docs_corpus, self.queries_corpus = self.load_dataset()
         self.ds_test, self.ds_train = self.dataset.split_train_test(cfg.dataset.test_size)
         self.model = model
-        self.model.build_index(self.docs_corpus[self.ds_test.docs].tolist())
 
     def load_dataset(self):
         orig_dir = Path(hydra.utils.get_original_cwd())
@@ -99,17 +98,22 @@ def merge_metrics(arr):
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
     np.random.seed(cfg.process.seed)
-    model = sentence_trans.SentTrans('distilroberta-base-msmarco-v2')
+    orig_dir = Path(hydra.utils.get_original_cwd())
+    model_path = 'distilroberta-base-msmarco-v2'
+    #model_path = str(orig_dir / Path(cfg.models.senttrans.model_path))
+    model = sentence_trans.SentTrans(model_path)
     #model = bm25.BM25()
     #model = oracle.Oracle()
     #model.build_index(self.ds_test)
     e = Experiment(cfg, model)
+    logger.info(f"Train size {len(e.ds_train)}")
+    logger.info(f"Start training...")
+    train_samples = sentence_trans.sent_dataset(e.ds_train, e.queries_corpus, e.docs_corpus)
+    dev_samples = sentence_trans.sent_dataset(e.ds_test, e.queries_corpus, e.docs_corpus)
+    model.train(train_samples, dev_samples, cfg.models.senttrans.model_path)
     logger.info(f"Test size {len(e.ds_test)}")
-    if USE_PARALLEL:
-        res = process_parallel(partial(container_fun, e), e.ds_test, cfg.process.batch)
-        metrics = merge_metrics(res)
-    else:
-        metrics = e.process2(e.ds_test[:3])
+    e.model.build_index(e.docs_corpus[e.ds_test.docs].tolist())
+    metrics = e.process2(e.ds_test)
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))
         logger.info(f"{name}: {val}")
