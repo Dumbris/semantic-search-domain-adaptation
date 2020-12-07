@@ -45,7 +45,7 @@ class Dataset:
     def _get_n_split(self, n_test_groups):
         #Calc split size
         if isinstance(n_test_groups, float):
-            n_test_groups = int(n_test_groups * self.queries.shape[0])
+            n_test_groups = int(n_test_groups * self.queries_uniq.shape[0])
 
         if not isinstance(n_test_groups, numbers.Integral): 
             raise Exception("n_test_groups must be int of float")
