@@ -11,7 +11,7 @@ def ensure_file_exists(path:Path):
         raise Exception(f"Invalid path {path}")
     return path
 
-def import_from_disk(dirpath:Path):
+def import_from_disk(dirpath:Path, normalize=True):
     if not dirpath.is_dir():
         raise Exception(f"Invalid path {dirpath}")
     solution_file = ensure_file_exists(dirpath / Path("solution.csv"))
@@ -38,5 +38,8 @@ def import_from_disk(dirpath:Path):
     #build dataset object
     queries = df_all.search_term.values
     docs = df_all.product_title.values
-    relevance = df_all.relevance.values
+    if normalize:
+        relevance = df_all.relevance.values / 3.0
+    else:
+        relevance = df_all.relevance.values
     return queries, docs, relevance
