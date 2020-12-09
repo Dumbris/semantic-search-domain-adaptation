@@ -12,6 +12,7 @@ from sentence_transformers import SentenceTransformer, util
 from search_eval.metrics import mapk, ndcg
 from search_eval.models import oracle
 from tqdm.auto import tqdm
+import torch
 #from joblib import Parallel, delayed
 from tqdm import tqdm
 #from search_eval.progressparallel import process_parallel, flatten
@@ -25,10 +26,23 @@ from collections import defaultdict
 from functools import partial
 from omegaconf import DictConfig, OmegaConf
 import hydra
-
+import random
+from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler
+from torch import nn
+from transformers import AutoModel, AutoTokenizer, AutoConfig
+from experiment.models.reranker import RerankerDataset, T2TDataCollator, compute_metrics
+from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
+
+def set_seed(seed):
+    logger.info(f"Set seed to {seed}")
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def load_dataset(cfg):
     orig_dir = Path(hydra.utils.get_original_cwd())
@@ -79,10 +93,40 @@ def train_sentencetrans(model,
         output_path=cfg.model_save_path)
     return model
 
+def train_reranker(model, tokenizer,
+                        ds_train, 
+                        ds_test, 
+                        queries_corpus, 
+                        docs_corpus, 
+                        cfg):
+    train_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
+    test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
+    
+    training_args = TrainingArguments(
+        output_dir='results',          # output directory
+        num_train_epochs=2,              # total # of training epochs
+        per_device_train_batch_size=32,  # batch size per device during training
+        per_device_eval_batch_size=32,   # batch size for evaluation
+        warmup_steps=100,                # number of warmup steps for learning rate scheduler
+        weight_decay=0.01,               # strength of weight decay
+        logging_dir='logs',            # directory for storing logs
+    )
+
+    trainer = Trainer(
+        model=model,                         # the instantiated 🤗 Transformers model to be trained
+        args=training_args,                  # training arguments, defined above
+        data_collator=T2TDataCollator(tokenizer, cfg),
+        train_dataset=train_dataset,         # training dataset
+        eval_dataset=test_dataset            # evaluation dataset
+    )
+    trainer.train()
+    trainer.evaluate()
+    trainer.save_model(cfg.model_save_path)
+
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
-    #Fix seed
-    np.random.seed(cfg.process.seed)
+    #Fixing seed
+    set_seed(cfg.process.seed)
     #init vars
 
     #Load dataset
@@ -91,10 +135,15 @@ def main(cfg: DictConfig):
     logger.info(f"Train size {len(ds_train)}")
     logger.info(f"Test size {len(ds_test)}")
 
+        #Reranker model
+    tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
+    reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
+    train_reranker(reranker, tokenizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.reranker)
+
     #Create vectorizer object
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
-    logger.info(f"Start training...")
-    vectorizer = train_sentencetrans(vectorizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.models.senttrans)
+    #logger.info(f"Start training...")
+    #vectorizer = train_sentencetrans(vectorizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.models.senttrans)
 
     #Init index class
     index = ann.HNSWIndex(cfg.index.ann)
@@ -117,6 +166,9 @@ def main(cfg: DictConfig):
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))
         logger.info(f"{name}: {val}")
+
+
+    
 
 def entry():
     main()
