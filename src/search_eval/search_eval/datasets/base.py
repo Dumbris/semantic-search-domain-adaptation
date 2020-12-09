@@ -6,6 +6,15 @@ import numpy as np
 from pathlib import Path
 import numbers
 
+def dataset2iter(dataset: 'Dataset', queries_corpus, docs_corpus):
+    queries_corpus = np.asarray(queries_corpus)
+    docs_corpus = np.asarray(docs_corpus)
+    for query, docs, rels in dataset:
+        query_text = queries_corpus[query]
+        for doc, relevancy in zip(docs, rels):
+            yield query_text, docs_corpus[doc], relevancy
+
+
 class Dataset:
     def __init__(self, queries, docs, relevance):
         self.cur_indx = 0
@@ -60,6 +69,11 @@ class Dataset:
         idx = np.argwhere(self.queries_uniq == idx)[0] #get judgements index
         mask = self.judgements == idx
         return self.queries_uniq[idx][0], self.docs[mask], self.relevance[mask]
+
+    def iterrows(self):
+        for query, docs, rels in self:
+            for doc, relevancy in zip(docs, rels):
+                yield query, doc, relevancy
 
     def __len__(self):
         return self.queries_uniq.shape[0]

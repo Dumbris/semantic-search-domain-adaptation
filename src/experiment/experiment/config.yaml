@@ -11,4 +11,13 @@ dataset:
 models:
   bm25: test_size
   senttrans:
-    model_path: "mymodel.bin" #'distilroberta-base-msmarco-v2'
+    base_model: 'distilroberta-base-msmarco-v2'
+    model_save_path: "mydistilroberta"
+    train_batch_size: 96
+    num_epochs: 4
+index:
+  ann:
+    dim: 768
+    space: 'cosine'
+    ef_construction: 400
+    M: 64
