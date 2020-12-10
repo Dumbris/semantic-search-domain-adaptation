@@ -30,7 +30,7 @@ import random
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler
 from torch import nn
 from transformers import AutoModel, AutoTokenizer, AutoConfig
-from experiment.models.reranker import RerankerDataset, T2TDataCollator, compute_metrics
+from experiment.models.reranker import RerankerDataset, T2TDataCollator
 from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -117,11 +117,12 @@ def train_reranker(model, tokenizer,
         args=training_args,                  # training arguments, defined above
         data_collator=T2TDataCollator(tokenizer, cfg),
         train_dataset=train_dataset,         # training dataset
-        eval_dataset=test_dataset            # evaluation dataset
+        eval_dataset=test_dataset,            # evaluation dataset
     )
     trainer.train()
-    trainer.evaluate()
+    logger.info(trainer.evaluate())
     trainer.save_model(cfg.model_save_path)
+    return trainer
 
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
@@ -138,8 +139,14 @@ def main(cfg: DictConfig):
         #Reranker model
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
-    train_reranker(reranker, tokenizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.reranker)
-
+    trainer = train_reranker(reranker, tokenizer, ds_train[:500], ds_test[:500], queries_corpus, docs_corpus, cfg.reranker)
+    #Test inference
+    input_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc]) for query, doc, _ in ds_train[:5].iterrows()])
+    y = trainer.predict(input_dataset)
+    
+    for _x, _pred in zip(input_dataset, y.predictions):
+        print(_x, _pred)
+    exit(0)
     #Create vectorizer object
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
     #logger.info(f"Start training...")
@@ -155,13 +162,29 @@ def main(cfg: DictConfig):
     logger.info(f"Encode queries...")
     queries_list = queries_corpus[ds_test.queries_uniq].tolist()
     vectorized_queries = vectorizer.encode(queries_list, show_progress_bar=True, convert_to_numpy=True)
-    metrics = defaultdict(list)
-    for (scores, idx), item in zip(index.generate_candidates(vectorized_queries, 10), ds_test):
-        query, docs, rels = item
+    #Reranking
+    candidates_pairs = []
+    for (_, idx), query in zip(index.generate_candidates(vectorized_queries, 100), ds_test.queries_uniq):
         ids_pred = ds_test.docs[idx]
+        for doc_id in ids_pred:
+            candidates_pairs.append((query, doc_id))
+    
+    assert len(candidates_pairs) == 100*len(ds_test.queries_uniq)
+
+    candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id in candidates_pairs])
+    y = trainer.predict(candidates_dataset).predictions
+    y = map(lambda x: x[0], y)
+
+    candidates_queries, candidates_docs = zip(*candidates_pairs)
+
+    candidates_ds = base.Dataset(candidates_queries, candidates_docs, y)
+
+    metrics = defaultdict(list)
+    for (pred_query, pred_docs, pred_rels), (test_query, test_docs, test_rels) in zip(candidates_ds, ds_test):
+        assert pred_query == test_query
         for k in [3,5,10]:
-            metrics[f"apk@{k}"].append(mapk.apk(docs, ids_pred, k))
-            metrics[f"ndcg@{k}"].append(ndcg.ndcg(rels, docs, scores, ids_pred, k))
+            metrics[f"apk@{k}"].append(mapk.apk(test_docs, pred_docs, k))
+            metrics[f"ndcg@{k}"].append(ndcg.ndcg(test_rels, test_docs, pred_rels, pred_docs, k))
 
     for name, vals in metrics.items():
         val = np.mean(np.array(vals))

@@ -34,21 +34,6 @@ class T2TDataCollator:
         """
         input_encodings = self.tokenizer.batch_encode_plus([[example['query'],example['doc']] for example in batch], 
                                                       padding=True, max_length=self.cfg.max_seq_length, truncation=True, return_tensors='pt')
-        input_encodings['labels'] = torch.tensor([float(example['label']) for example in batch],dtype=torch.float)
+        if 'label' in batch[0]:
+            input_encodings['labels'] = torch.tensor([float(example['label']) for example in batch],dtype=torch.float)
         return input_encodings
-
-
-def compute_metrics(pred):
-    labels = pred.label_ids
-    preds = pred.predictions.argmax(-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='weighted')
-        
-    return {'f1': f1}
-
-    acc = accuracy_score(labels, preds)
-    return {
-        'accuracy': acc,
-        'f1': f1,
-        'precision': precision,
-        'recall': recall
-    }
