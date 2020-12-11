@@ -132,21 +132,23 @@ def main(cfg: DictConfig):
 
     #Load dataset
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
-    ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
+    ds_test_all, ds_train_all = dataset.split_train_test(cfg.dataset.test_size)
+    ds_test = ds_test_all[:2000]
+    ds_train = ds_train_all#[:600]
     logger.info(f"Train size {len(ds_train)}")
     logger.info(f"Test size {len(ds_test)}")
 
         #Reranker model
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
-    trainer = train_reranker(reranker, tokenizer, ds_train[:500], ds_test[:500], queries_corpus, docs_corpus, cfg.reranker)
+    trainer = train_reranker(reranker, tokenizer, ds_train, ds_test[:1000], queries_corpus, docs_corpus, cfg.reranker)
     #Test inference
-    input_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc]) for query, doc, _ in ds_train[:5].iterrows()])
-    y = trainer.predict(input_dataset)
+    #input_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc]) for query, doc, _ in ds_train[:5].iterrows()])
+    #y = trainer.predict(input_dataset)
     
-    for _x, _pred in zip(input_dataset, y.predictions):
-        print(_x, _pred)
-    exit(0)
+    #for _x, _pred in zip(input_dataset, y.predictions):
+    #    print(_x, _pred)
+    
     #Create vectorizer object
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
     #logger.info(f"Start training...")
@@ -163,22 +165,24 @@ def main(cfg: DictConfig):
     queries_list = queries_corpus[ds_test.queries_uniq].tolist()
     vectorized_queries = vectorizer.encode(queries_list, show_progress_bar=True, convert_to_numpy=True)
     #Reranking
+    logger.info(f"Generate candidates for reranking...")
+    RERANK_LENGTH = 50
     candidates_pairs = []
-    for (_, idx), query in zip(index.generate_candidates(vectorized_queries, 100), ds_test.queries_uniq):
+    for (_, idx), query in zip(index.generate_candidates(vectorized_queries, RERANK_LENGTH), ds_test.queries_uniq):
         ids_pred = ds_test.docs[idx]
         for doc_id in ids_pred:
             candidates_pairs.append((query, doc_id))
     
-    assert len(candidates_pairs) == 100*len(ds_test.queries_uniq)
-
+    assert len(candidates_pairs) == RERANK_LENGTH*len(ds_test.queries_uniq)
+    logger.info(f"Start reranking...")
     candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id in candidates_pairs])
     y = trainer.predict(candidates_dataset).predictions
-    y = map(lambda x: x[0], y)
+    y =list(map(lambda x: x[0], y))
 
     candidates_queries, candidates_docs = zip(*candidates_pairs)
 
     candidates_ds = base.Dataset(candidates_queries, candidates_docs, y)
-
+    logger.info(f"Calculating metrics...")
     metrics = defaultdict(list)
     for (pred_query, pred_docs, pred_rels), (test_query, test_docs, test_rels) in zip(candidates_ds, ds_test):
         assert pred_query == test_query
