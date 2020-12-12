@@ -150,7 +150,6 @@ def main(cfg: DictConfig):
     #Fixing seed
     set_seed(cfg.process.seed)
     #init vars
-    cfg.json
     #Load dataset
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
     ds_test_all, ds_train_all = dataset.split_train_test(cfg.dataset.test_size)
