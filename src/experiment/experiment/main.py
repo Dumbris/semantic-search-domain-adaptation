@@ -179,9 +179,8 @@ def main(cfg: DictConfig):
     RERANK_LENGTH = 50
     candidates_pairs = []
     for (score, idx), query in zip(index.generate_candidates(vectorized_queries, RERANK_LENGTH), ds_test.queries_uniq):
-        ids_pred = ds_test.docs[idx]
-        for doc_id in ids_pred:
-            candidates_pairs.append((query, doc_id, score))
+        for doc_id, doc_relevancy in zip(ds_test.docs[idx], score):
+            candidates_pairs.append((query, doc_id, doc_relevancy))
     
     assert len(candidates_pairs) == RERANK_LENGTH*len(ds_test.queries_uniq)
 
