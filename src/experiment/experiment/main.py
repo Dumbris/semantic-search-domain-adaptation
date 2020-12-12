@@ -150,7 +150,7 @@ def main(cfg: DictConfig):
     #Fixing seed
     set_seed(cfg.process.seed)
     #init vars
-
+    cfg.json
     #Load dataset
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
     ds_test_all, ds_train_all = dataset.split_train_test(cfg.dataset.test_size)
@@ -190,7 +190,7 @@ def main(cfg: DictConfig):
 
     save_report({
         'metrics':calc_metrics(ds_test, ds_candidates), 
-        'vectorizer':vectorizer.get_config_dict()
+        'vectorizer': {'name': cfg.models.senttrans.base_model, 'num_epochs':cfg.models.senttrans.num_epochs},
         }, cfg.report)
 
     #Reranker model
@@ -206,7 +206,7 @@ def main(cfg: DictConfig):
 
     save_report({
         'metrics':calc_metrics(ds_test, ds_candidates2), 
-        'vectorizer':vectorizer.get_config_dict(),
+        'vectorizer': {'name': cfg.models.senttrans.base_model, 'num_epochs':cfg.models.senttrans.num_epochs},
         'reranker': dataclasses.asdict(trainer.state)
         }, cfg.report)
 
