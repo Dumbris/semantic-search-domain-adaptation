@@ -11,7 +11,7 @@ readonly HOMEDIR="${PWD}"
 readonly VIRT_ENV_DIR=${VIRT_ENV_DIR:-".pyenv"}
 
 if [ ! -d "${VIRT_ENV_DIR}" ];then
-    virtualenv -p python3 "${VIRT_ENV_DIR}"
+    python3 -m virtualenv -p python3 "${VIRT_ENV_DIR}"
 else
     echo "Found ${VIRT_ENV_DIR}, skip virtualenv creation."
 fi
