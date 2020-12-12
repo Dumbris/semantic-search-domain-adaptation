@@ -10,3 +10,25 @@ dataset:
   test_size: 0.5
 models:
   bm25: test_size
+  senttrans:
+    base_model: 'distilroberta-base-msmarco-v2'
+    model_save_path: "mydistilroberta"
+    train_batch_size: 96
+    num_epochs: 4
+
+reranker:
+  base_model: 'roberta-base'
+  model_save_path: "myroberta"
+  max_seq_length: 400
+  train_batch_size: 96
+  num_epochs: 4
+
+index:
+  ann:
+    dim: 768
+    space: 'cosine'
+    ef_construction: 400
+    M: 64
+experiment:
+  train_vectorizer: false
+  train_reranker: true
