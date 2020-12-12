@@ -13,9 +13,6 @@ from search_eval.metrics import mapk, ndcg
 from search_eval.models import oracle
 from tqdm.auto import tqdm
 import torch
-#from joblib import Parallel, delayed
-from tqdm import tqdm
-#from search_eval.progressparallel import process_parallel, flatten
 from experiment import homedepot
 from torch.utils.data import DataLoader
 import math
@@ -32,6 +29,9 @@ from torch import nn
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 from experiment.models.reranker import RerankerDataset, T2TDataCollator
 from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments
+import dataclasses
+import json
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
@@ -124,6 +124,27 @@ def train_reranker(model, tokenizer,
     trainer.save_model(cfg.model_save_path)
     return trainer
 
+def calc_metrics(ds_test: base.Dataset, ds_pred: base.Dataset) -> Dict:
+    logger.info(f"Calculating metrics...")
+    metrics = defaultdict(list)
+    res = {}
+    for (pred_query, pred_docs, pred_rels), (test_query, test_docs, test_rels) in zip(ds_pred, ds_test):
+        assert pred_query == test_query
+        for k in [3,5,10]:
+            metrics[f"apk@{k}"].append(mapk.apk(test_docs, pred_docs, k))
+            metrics[f"ndcg@{k}"].append(ndcg.ndcg(test_rels, test_docs, pred_rels, pred_docs, k))
+
+    for name, vals in metrics.items():
+        val = np.mean(np.array(vals))
+        res[name] = val
+        logger.info(f"{name}: {val}")
+    return res
+
+def save_report(data, cfg):
+    with open(cfg.output_file, 'a') as f:
+        f.write("{}\n".format(json.dumps(data)))
+
+
 @hydra.main(config_name="config.yaml")
 def main(cfg: DictConfig):
     #Fixing seed
@@ -133,27 +154,16 @@ def main(cfg: DictConfig):
     #Load dataset
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
     ds_test_all, ds_train_all = dataset.split_train_test(cfg.dataset.test_size)
-    ds_test = ds_test_all[:2000]
-    ds_train = ds_train_all#[:600]
+    ds_test = ds_test_all[:20]
+    ds_train = ds_train_all[:60]
     logger.info(f"Train size {len(ds_train)}")
     logger.info(f"Test size {len(ds_test)}")
 
-        #Reranker model
-    tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
-    reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
-    trainer = train_reranker(reranker, tokenizer, ds_train, ds_test[:1000], queries_corpus, docs_corpus, cfg.reranker)
-    #Test inference
-    #input_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc]) for query, doc, _ in ds_train[:5].iterrows()])
-    #y = trainer.predict(input_dataset)
-    
-    #for _x, _pred in zip(input_dataset, y.predictions):
-    #    print(_x, _pred)
     
     #Create vectorizer object
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
-    #logger.info(f"Start training...")
-    #vectorizer = train_sentencetrans(vectorizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.models.senttrans)
-
+    logger.info(f"Start vectorizer training...")
+    train_sentencetrans(vectorizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.models.senttrans)
     #Init index class
     index = ann.HNSWIndex(cfg.index.ann)
     logger.info(f"Encode docs...")
@@ -168,31 +178,40 @@ def main(cfg: DictConfig):
     logger.info(f"Generate candidates for reranking...")
     RERANK_LENGTH = 50
     candidates_pairs = []
-    for (_, idx), query in zip(index.generate_candidates(vectorized_queries, RERANK_LENGTH), ds_test.queries_uniq):
+    for (score, idx), query in zip(index.generate_candidates(vectorized_queries, RERANK_LENGTH), ds_test.queries_uniq):
         ids_pred = ds_test.docs[idx]
         for doc_id in ids_pred:
-            candidates_pairs.append((query, doc_id))
+            candidates_pairs.append((query, doc_id, score))
     
     assert len(candidates_pairs) == RERANK_LENGTH*len(ds_test.queries_uniq)
+
+    candidates_queries, candidates_docs, candidates_scores = zip(*candidates_pairs)
+
+    ds_candidates = base.Dataset(candidates_queries, candidates_docs, candidates_scores)
+
+    save_report({
+        'metrics':calc_metrics(ds_test, ds_candidates), 
+        'vectorizer':vectorizer.get_config_dict()
+        }, cfg.report)
+
+    #Reranker model
+    tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
+    reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
+    trainer = train_reranker(reranker, tokenizer, ds_train, ds_test[:1000], queries_corpus, docs_corpus, cfg.reranker)
     logger.info(f"Start reranking...")
-    candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id in candidates_pairs])
+    candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id, _ in candidates_pairs])
     y = trainer.predict(candidates_dataset).predictions
     y =list(map(lambda x: x[0], y))
 
-    candidates_queries, candidates_docs = zip(*candidates_pairs)
+    ds_candidates2 = base.Dataset(candidates_queries, candidates_docs, candidates_scores)
 
-    candidates_ds = base.Dataset(candidates_queries, candidates_docs, y)
-    logger.info(f"Calculating metrics...")
-    metrics = defaultdict(list)
-    for (pred_query, pred_docs, pred_rels), (test_query, test_docs, test_rels) in zip(candidates_ds, ds_test):
-        assert pred_query == test_query
-        for k in [3,5,10]:
-            metrics[f"apk@{k}"].append(mapk.apk(test_docs, pred_docs, k))
-            metrics[f"ndcg@{k}"].append(ndcg.ndcg(test_rels, test_docs, pred_rels, pred_docs, k))
+    save_report({
+        'metrics':calc_metrics(ds_test, ds_candidates2), 
+        'vectorizer':vectorizer.get_config_dict(),
+        'reranker': dataclasses.asdict(trainer.state)
+        }, cfg.report)
 
-    for name, vals in metrics.items():
-        val = np.mean(np.array(vals))
-        logger.info(f"{name}: {val}")
+    logger.info('All done!')
 
 
     

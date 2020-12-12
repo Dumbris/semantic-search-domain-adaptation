@@ -29,6 +29,6 @@ index:
     space: 'cosine'
     ef_construction: 400
     M: 64
-experiment:
-  train_vectorizer: false
-  train_reranker: true
+
+report:
+  output_file: 'output.json'
