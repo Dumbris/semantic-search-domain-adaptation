@@ -3,6 +3,8 @@
 
 import spacy
 
+spacy_model_name = 'en_core_web_sm'
+
 def lemmatize_pipe(doc):
     lemma_list = [str(tok.lemma_).lower() for tok in doc
                   if (tok.is_digit or tok.is_alpha) and not tok.is_stop] 
@@ -10,7 +12,10 @@ def lemmatize_pipe(doc):
 
 class Preprocess:
     def __init__(self):
-        self.nlp = spacy.load('en_core_web_sm', disable=['tagger', 'parser', 'ner'])
+        if not spacy.util.is_package(spacy_model_name):
+            spacy.cli.download(spacy_model_name)
+        nlp = spacy.load(spacy_model_name)
+        self.nlp = spacy.load(spacy_model_name, disable=['tagger', 'parser', 'ner'])
         self.nlp.add_pipe(self.nlp.create_pipe('sentencizer'))
 
     def preprocess_pipe(self, texts, batch_size=500):

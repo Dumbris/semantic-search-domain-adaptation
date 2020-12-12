@@ -18,11 +18,11 @@ fi
 
 echo "Install packages for develop..."
 
-"${HOMEDIR}/${VIRT_ENV_DIR}/bin/python" -m spacy download en_core_web_sm
-
 for pkg_dir in "search_eval" "experiment"
 do
     cd "${HOMEDIR}/src/${pkg_dir}"
     "${HOMEDIR}/${VIRT_ENV_DIR}/bin/python" -m pip install -e .
     cd "${HOMEDIR}"
 done
+
+#"${HOMEDIR}/${VIRT_ENV_DIR}/bin/python" -m spacy download en_core_web_sm
