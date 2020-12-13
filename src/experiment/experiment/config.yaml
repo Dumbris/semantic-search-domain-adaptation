@@ -7,21 +7,24 @@ dataset:
   cache_path: "hd_cache.npz"
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
-  test_size: 0.5
+  sample: 1000
+  test_size: 0.4
 models:
   bm25: test_size
   senttrans:
     base_model: 'distilroberta-base-msmarco-v2'
     model_save_path: "mydistilroberta"
+    train_sample: None
     train_batch_size: 96
-    num_epochs: 4
+    num_epochs: 2
 
 reranker:
   base_model: 'roberta-base'
   model_save_path: "myroberta"
   max_seq_length: 400
   train_batch_size: 96
-  num_epochs: 4
+  train_sample: None
+  num_epochs: 2
 
 index:
   ann:

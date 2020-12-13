@@ -152,9 +152,8 @@ def main(cfg: DictConfig):
     #init vars
     #Load dataset
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
-    ds_test_all, ds_train_all = dataset.split_train_test(cfg.dataset.test_size)
-    ds_test = ds_test_all[:20]
-    ds_train = ds_train_all[:60]
+    dataset = dataset.sample(cfg.dataset.sample)
+    ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
     logger.info(f"Train size {len(ds_train)}")
     logger.info(f"Test size {len(ds_test)}")
 
@@ -162,7 +161,12 @@ def main(cfg: DictConfig):
     #Create vectorizer object
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
     logger.info(f"Start vectorizer training...")
-    train_sentencetrans(vectorizer, ds_train, ds_test, queries_corpus, docs_corpus, cfg.models.senttrans)
+    train_sentencetrans(vectorizer, 
+                        ds_train.sample(cfg.models.senttrans.train_sample), 
+                        ds_test, 
+                        queries_corpus, 
+                        docs_corpus, 
+                        cfg.models.senttrans)
     #Init index class
     index = ann.HNSWIndex(cfg.index.ann)
     logger.info(f"Encode docs...")
@@ -195,7 +199,13 @@ def main(cfg: DictConfig):
     #Reranker model
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
-    trainer = train_reranker(reranker, tokenizer, ds_train, ds_test[:1000], queries_corpus, docs_corpus, cfg.reranker)
+    trainer = train_reranker(reranker, 
+                            tokenizer, 
+                            ds_train.sample(cfg.reranker.base_model.train_sample), 
+                            ds_test, 
+                            queries_corpus, 
+                            docs_corpus, 
+                            cfg.reranker)
     logger.info(f"Start reranking...")
     candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id, _ in candidates_pairs])
     y = trainer.predict(candidates_dataset).predictions
