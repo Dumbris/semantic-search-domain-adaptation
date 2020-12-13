@@ -2,7 +2,7 @@
 """
 
 import numpy as np
-
+from typing import Union, List
 from pathlib import Path
 import numbers
 
@@ -38,6 +38,17 @@ class Dataset:
                     relevance=self.relevance, 
                     docs=self.docs)
 
+    def sample(self, num_samples: Union[int, float]) -> 'Dataset':
+        if not num_samples:
+            return self
+        num_samples = self._get_n_split(num_samples)
+        permutation = np.random.permutation(self.queries_idx)
+        queries_indx_ = permutation[:num_samples]
+
+        samples_idx = np.flatnonzero(np.in1d(self.judgements, queries_indx_))
+
+        return Dataset(self.queries[samples_idx], self.docs[samples_idx], self.relevance[samples_idx])
+
     def split_train_test(self, n_test_groups=0.6):
         n_test_groups = self._get_n_split(n_test_groups)
         permutation = np.random.permutation(self.queries_idx)
@@ -55,6 +66,7 @@ class Dataset:
         #Calc split size
         if isinstance(n_test_groups, float):
             n_test_groups = int(n_test_groups * self.queries_uniq.shape[0])
+            n_test_groups = max(n_test_groups, 1)
 
         if not isinstance(n_test_groups, numbers.Integral): 
             raise Exception("n_test_groups must be int of float")
