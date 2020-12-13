@@ -2,7 +2,7 @@
 """
 
 import numpy as np
-from typing import Union, List
+from typing import Union, Optional, List
 from pathlib import Path
 import numbers
 
@@ -38,15 +38,13 @@ class Dataset:
                     relevance=self.relevance, 
                     docs=self.docs)
 
-    def sample(self, num_samples: Union[int, float]) -> 'Dataset':
+    def sample(self, num_samples: Optional[Union[int, float]] = None) -> 'Dataset':
         if not num_samples:
             return self
         num_samples = self._get_n_split(num_samples)
         permutation = np.random.permutation(self.queries_idx)
         queries_indx_ = permutation[:num_samples]
-
         samples_idx = np.flatnonzero(np.in1d(self.judgements, queries_indx_))
-
         return Dataset(self.queries[samples_idx], self.docs[samples_idx], self.relevance[samples_idx])
 
     def split_train_test(self, n_test_groups=0.6):
