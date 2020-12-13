@@ -201,7 +201,7 @@ def main(cfg: DictConfig):
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
     trainer = train_reranker(reranker, 
                             tokenizer, 
-                            ds_train.sample(cfg.reranker.base_model.train_sample), 
+                            ds_train.sample(cfg.reranker.train_sample), 
                             ds_test, 
                             queries_corpus, 
                             docs_corpus, 

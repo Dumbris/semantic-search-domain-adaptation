@@ -14,7 +14,7 @@ models:
   senttrans:
     base_model: 'distilroberta-base-msmarco-v2'
     model_save_path: "mydistilroberta"
-    train_sample: None
+    train_sample: false
     train_batch_size: 96
     num_epochs: 2
 
@@ -23,7 +23,7 @@ reranker:
   model_save_path: "myroberta"
   max_seq_length: 400
   train_batch_size: 96
-  train_sample: None
+  train_sample: false
   num_epochs: 2
 
 index:
