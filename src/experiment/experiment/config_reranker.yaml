@@ -7,8 +7,8 @@ dataset:
   cache_path: "hd_cache.npz"
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
-  sample: 5000
-  test_size: 0.4
+  sample: 3000
+  test_size: 0.5
 models:
   bm25: test_size
   senttrans:
@@ -22,11 +22,11 @@ models:
 reranker:
   base_model: 'roberta-base'
   model_save_path: "myroberta"
-  max_seq_length: 400
-  train_batch_size: 96
+  max_seq_length: 300
+  train_batch_size: 128
   train_sample: false
   num_epochs: 2
-  k: 50
+  k: 30
 
 metrics:
   k: [3,5,10]
