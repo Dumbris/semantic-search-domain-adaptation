@@ -9,8 +9,7 @@ import numpy as np
 from search_eval.datasets import base
 from experiment.models import ann, bm25
 from sentence_transformers import SentenceTransformer, util
-from search_eval.metrics import mapk, ndcg
-from search_eval.models import oracle
+from sentence_transformers.evaluation import SentenceEvaluator
 from tqdm.auto import tqdm
 import torch
 from experiment import homedepot
@@ -32,6 +31,10 @@ from transformers import RobertaForSequenceClassification, Trainer, TrainingArgu
 import dataclasses
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from experiment.candidates import get_new_candidates
+from experiment.metrics import calc_metrics
+
+from transformers.trainer_callback import TrainerCallback
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
@@ -68,19 +71,72 @@ def load_dataset(cfg):
         hd.save_to_cache(cache_path)
     return hd, docs_corpus, queries_corpus
 
+class MyRerankerMetrics:
+    def __init__(self, ds_test:base.Dataset, ds_candidates:base.Dataset, cfg, name:str = 'reranker'):
+        self.ds_test = ds_test
+        self.ds_candidates = ds_candidates
+
+
+    def __call__(self, pred):
+        label_ids = pred.label_ids
+        preds = pred.predictions.reshape(-1)
+        np.testing.assert_equal(label_ids, self.ds_candidates.relevance)
+        metrics = calc_metrics(self.ds_test, base.Dataset(self.ds_candidates.queries, self.ds_candidates.docs, preds))
+        return metrics
+
+
+class MyInformationRetrievalEvaluator(SentenceEvaluator):
+    """Class for evaluation during experiment
+    """
+    def __init__(self, ds_test:base.Dataset, queries_corpus, docs_corpus, cfg, name:str = 'sentence_transformer'):
+        self.ds_test = ds_test
+        self.vectorizer = None
+        self.queries_corpus = queries_corpus
+        self.docs_corpus = docs_corpus
+        self.reranker = None
+        self.cfg = cfg
+        self.name = name
+
+    def __call__(self, model, output_path: str = None, epoch: int = -1, steps: int = -1) -> float:
+        if epoch != -1:
+            out_txt = " after epoch {}:".format(epoch) if steps == -1 else " in epoch {} after {} steps:".format(epoch, steps)
+        else:
+            out_txt = ":"
+
+        logging.info(f"Information Retrieval Evaluation on dataset {out_txt}")
+        
+        ds_candidates = get_new_candidates(self.ds_test, self.queries_corpus, self.docs_corpus, model, self.cfg, self.cfg.models.senttrans.k)
+        metrics = calc_metrics(self.ds_test, ds_candidates)
+        data = {
+            "name": self.name,
+            "epoch": epoch,
+            "steps": steps,
+            "metrics": metrics,
+            "base_model": self.cfg.models.senttrans.base_model
+        }
+        self.save_report(data)
+        max_k = max(self.cfg.metrics.k)
+        return metrics[f"ndcg@{max_k}"]
+
+    def save_report(self, data):
+        with open(self.cfg.report.output_file, 'a') as f:
+            f.write("{}\n".format(json.dumps(data)))
+
 def train_sentencetrans(model, 
+                        evaluator, 
                         ds_train, 
                         ds_test, 
                         queries_corpus, 
                         docs_corpus, 
                         cfg):
     train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_train.iterrows()]
-    dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
+    #dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
     train_dataset = SentencesDataset(train_samples, model)
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
     train_loss = losses.CosineSimilarityLoss(model=model)
     # Development set: Measure correlation between cosine score and gold labels
-    evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')
+    ###evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')
+    
     # Configure the training. We skip evaluation in this example
     warmup_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * 0.05) #5% of train data for warm-up
     logging.info("Warmup-steps: {}".format(warmup_steps))
@@ -93,23 +149,30 @@ def train_sentencetrans(model,
         output_path=cfg.model_save_path)
     return model
 
+
+
+
 def train_reranker(model, tokenizer,
                         ds_train, 
-                        ds_test, 
+                        ds_candidates, 
                         queries_corpus, 
                         docs_corpus, 
+                        compute_metrics,
                         cfg):
     train_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
-    test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
+    test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_candidates.iterrows()])
+    logger.info(f"Reranker test dataset {len(test_dataset)} items, train dataset {len(train_dataset)} items")
     
     training_args = TrainingArguments(
         output_dir='results',          # output directory
-        num_train_epochs=2,              # total # of training epochs
-        per_device_train_batch_size=32,  # batch size per device during training
-        per_device_eval_batch_size=32,   # batch size for evaluation
+        num_train_epochs=3,              # total # of training epochs
+        per_device_train_batch_size=64,  # batch size per device during training
+        per_device_eval_batch_size=64,   # batch size for evaluation
         warmup_steps=100,                # number of warmup steps for learning rate scheduler
         weight_decay=0.01,               # strength of weight decay
         logging_dir='logs',            # directory for storing logs
+        evaluation_strategy='steps',
+        eval_steps=500
     )
 
     trainer = Trainer(
@@ -118,71 +181,13 @@ def train_reranker(model, tokenizer,
         data_collator=T2TDataCollator(tokenizer, cfg),
         train_dataset=train_dataset,         # training dataset
         eval_dataset=test_dataset,            # evaluation dataset
+        compute_metrics=compute_metrics,
+        
     )
     trainer.train()
     logger.info(trainer.evaluate())
-    trainer.save_model(cfg.model_save_path)
+    #trainer.save_model(cfg.model_save_path)
     return trainer
-
-    #docs_corpus[ds.docs].tolist()
-    #ds.docs[idx]
-def get_candidates(queries_list:List[str], docs_corpus, vectorizer, cfg, k:int=50):
-    #Init index class
-    index = ann.HNSWIndex(cfg.index.ann)
-    logger.info("Encode docs...")
-    vectorized_docs = vectorizer.encode(docs_corpus, show_progress_bar=True, convert_to_numpy=True)
-    logger.info("Indexing docs...")
-    index.build(vectorized_docs)
-
-    logger.info("Encode queries...")
-    vectorized_queries = vectorizer.encode(queries_list, show_progress_bar=True, convert_to_numpy=True)
-    #Reranking
-    logger.info("Generate candidates for reranking...")
-    candidates_pairs = []
-    for (score, idx), query in zip(index.generate_candidates(vectorized_queries, k), queries_list):
-        for doc_id, doc_relevancy in zip(idx, score):
-            candidates_pairs.append((query, doc_id, doc_relevancy))
-    
-    assert len(candidates_pairs) == k*len(queries_list)
-
-    candidates_queries, candidates_docs, candidates_scores = zip(*candidates_pairs)
-
-    return base.Dataset(candidates_queries, candidates_docs, candidates_scores)
-
-class Evaluator:
-    """Class for evaluation during experiment
-    """
-    def __init__(self, ds_test:base.Dataset, vectorizer, cfg):
-        self.ds_test = ds_test
-        self.vectorizer = vectorizer
-        self.reranker = None
-        self.cfg = cfg
-
-    def run(self):
-        get_candidates(qu)
-
-    def calc_metrics(self, ds_test: base.Dataset, ds_pred: base.Dataset) -> Dict:
-        logger.info(f"Calculating metrics...")
-        metrics = defaultdict(list)
-        res = {}
-        for (pred_query, pred_docs, pred_rels), (test_query, test_docs, test_rels) in zip(ds_pred, ds_test):
-            assert pred_query == test_query
-            for k in [3,5,10]:
-                metrics[f"apk@{k}"].append(mapk.apk(test_docs, pred_docs, k))
-                metrics[f"ndcg@{k}"].append(ndcg.ndcg(test_rels, test_docs, pred_rels, pred_docs, k))
-
-        for name, vals in metrics.items():
-            val = np.mean(np.array(vals))
-            res[name] = val
-            logger.info(f"{name}: {val}")
-        return res
-    
-    def set_reranker(self, reranker):
-        self.reranker = reranker
-
-    def save_report(data, cfg):
-        with open(cfg.output_file, 'a') as f:
-            f.write("{}\n".format(json.dumps(data)))
 
 
 @hydra.main(config_name="config.yaml")
@@ -195,51 +200,46 @@ def main(cfg: DictConfig):
     dataset, docs_corpus, queries_corpus = load_dataset(cfg)
     dataset = dataset.sample(cfg.dataset.sample)
     ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
-    logger.info(f"Train size {len(ds_train)}")
-    logger.info(f"Test size {len(ds_test)}")
+    ds_test = ds_test#[:200]
+    logger.info(f"Train size {len(ds_train)}, Test size {len(ds_test)}")
     logger.info("Init vectorizer model")
     vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
     logger.info("Init reranker model")
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
-    logger.info("Init evaluator")
-    evaluator = Evaluator(ds_test, cfg)
+
+    #Step 2. Reranking
+    ds_candidates = get_new_candidates(ds_test, queries_corpus, docs_corpus, vectorizer, cfg, cfg.reranker.k)
     
+    _metrics = MyRerankerMetrics(ds_test, ds_candidates, cfg, '@@@')
+    #Reranker model
+    trainer = train_reranker(reranker, 
+                            tokenizer, 
+                            ds_train.sample(cfg.reranker.train_sample), 
+                            ds_candidates, 
+                            queries_corpus, 
+                            docs_corpus,
+                            _metrics, 
+                            cfg.reranker)
+
+    exit(0)
+
+    evaluator = MyInformationRetrievalEvaluator(ds_test, queries_corpus, docs_corpus, cfg)
     #Create vectorizer object
     logger.info(f"Start vectorizer training...")
-    train_sentencetrans(vectorizer, 
+    train_sentencetrans(vectorizer,
+                        evaluator,
                         ds_train.sample(cfg.models.senttrans.train_sample), 
                         ds_test, 
                         queries_corpus, 
                         docs_corpus, 
                         cfg.models.senttrans)
+    
 
-    save_report({
-        'metrics':calc_metrics(ds_test, ds_candidates), 
-        'vectorizer': {'name': cfg.models.senttrans.base_model, 'num_epochs':cfg.models.senttrans.num_epochs},
-        }, cfg.report)
-
-    ds_candidates = get_candidates(queries_corpus[ds_test.queries_uniq].tolist(), docs_corpus, queries_corpus, vectorizer, 50)
-    #Reranker model
-    trainer = train_reranker(reranker, 
-                            tokenizer, 
-                            ds_train.sample(cfg.reranker.train_sample), 
-                            ds_test, 
-                            queries_corpus, 
-                            docs_corpus, 
-                            cfg.reranker)
-    logger.info(f"Start reranking...")
-    candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id, _ in ds_candidates.iterrows()])
-    y = trainer.predict(candidates_dataset).predictions
-    y =list(map(lambda x: x[0], y))
-
-    ds_candidates2 = base.Dataset(candidates_queries, candidates_docs, candidates_scores)
-
-    save_report({
-        'metrics':calc_metrics(ds_test, ds_candidates2), 
-        'vectorizer': {'name': cfg.models.senttrans.base_model, 'num_epochs':cfg.models.senttrans.num_epochs},
-        'reranker': dataclasses.asdict(trainer.state)
-        }, cfg.report)
+    #logger.info(f"Start reranking...")
+    #candidates_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc_id]) for query, doc_id, _ in ds_candidates.iterrows()])
+    #y = trainer.predict(candidates_dataset).predictions
+    #y =list(map(lambda x: x[0], y))
 
     logger.info('All done!')
 
