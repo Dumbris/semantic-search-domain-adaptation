@@ -47,7 +47,8 @@ setup(
     test_suite='tests',
     entry_points = {
         'console_scripts': [
-            'eval_cli=experiment.main:entry',
+            'eval_encoder=experiment.eval_encoder:entry',
+            'eval_reranker=experiment.eval_reranker:entry',
         ]
     }
 )

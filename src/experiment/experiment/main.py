@@ -39,14 +39,6 @@ from transformers.trainer_callback import TrainerCallback
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
 
-def set_seed(seed):
-    logger.info(f"Set seed to {seed}")
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 def load_dataset(cfg):
     orig_dir = Path(hydra.utils.get_original_cwd())
     data_path = orig_dir / Path(cfg.dataset.dir_path)
