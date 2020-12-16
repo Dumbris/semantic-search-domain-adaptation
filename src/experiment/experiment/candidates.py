@@ -10,14 +10,13 @@ def get_new_candidates(ds_test, queries_corpus, docs_corpus, vectorizer, cfg, k:
     #Init index class
     index = ann.HNSWIndex(cfg.index.ann) #TODO: remove this dependency
     logger.info("Encode docs...")
-    #vectorized_docs = vectorizer.encode(docs_corpus[ds_test.docs], show_progress_bar=True, convert_to_numpy=True)
-    vectorized_docs = vectorizer.encode(docs_corpus[ds_test.docs], show_progress_bar=True, convert_to_numpy=True)
+    vectorized_docs = vectorizer.encode(docs_corpus[ds_test.docs], show_progress_bar=False, convert_to_numpy=True)
     logger.info("Indexing docs...")
     index.build(vectorized_docs)
 
     logger.info("Encode queries...")
     queries_list = queries_corpus[ds_test.queries_uniq].tolist()
-    vectorized_queries = vectorizer.encode(queries_list, show_progress_bar=True, convert_to_numpy=True)
+    vectorized_queries = vectorizer.encode(queries_list, show_progress_bar=False, convert_to_numpy=True)
     #Reranking
     logger.info("Generate candidates for reranking...")
     candidates_pairs = []
