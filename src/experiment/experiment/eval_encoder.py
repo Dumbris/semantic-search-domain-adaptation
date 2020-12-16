@@ -4,6 +4,12 @@ import numpy as np
 import logging
 import math
 import json
+import tqdm
+
+def nop(it, *a, **k):
+    return it
+tqdm.tqdm = nop
+
 from experiment import utils
 from search_eval.datasets import base
 from experiment.models import ann
@@ -82,6 +88,7 @@ def train_sentencetrans(model,
         evaluation_steps=cfg.evaluation_steps,
         warmup_steps=warmup_steps,
         output_path=cfg.model_save_path)
+
     return model
 
 @hydra.main(config_name="config_encoder.yaml")
