@@ -14,9 +14,9 @@ models:
     base_model: 'distilroberta-base-msmarco-v2'
     model_save_path: "mydistilroberta"
     train_sample: false
-    train_batch_size: 96
-    num_epochs: 5
-    k: 30
+    train_batch_size: 64
+    num_epochs: 4
+    k: 50
     evaluation_steps: 500
 
 reranker:

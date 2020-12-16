@@ -1,13 +1,12 @@
 # @package _group_
 process: 
   seed: 42
-  batch: 500
 dataset:
   dir_path: "data/home_depot"
   cache_path: "hd_cache.npz"
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
-  sample: 3000
+  sample: false
   test_size: 0.5
 models:
   bm25: test_size
@@ -22,11 +21,11 @@ models:
 reranker:
   base_model: 'roberta-base'
   model_save_path: "myroberta"
-  max_seq_length: 300
-  train_batch_size: 128
+  max_seq_length: 400
+  train_batch_size: 64
   train_sample: false
   num_epochs: 2
-  k: 30
+  k: 50
 
 metrics:
   k: [3,5,10]
