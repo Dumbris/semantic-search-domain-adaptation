@@ -8,6 +8,9 @@ dataset:
   queries_corpus_path: "hd_queries_corpus.npy"
   sample: false
   test_size: 0.4
+encoders:
+  tokenizer:
+    spacy_model_name: "en_core_web_sm"
 models:
   bm25: test_size
   senttrans:
@@ -37,6 +40,9 @@ index:
     space: 'cosine'
     ef_construction: 400
     M: 64
+    k: 50
+  bm25:
+    k: 50
 
 report:
   output_file: 'output.json'

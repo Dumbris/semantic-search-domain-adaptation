@@ -6,55 +6,19 @@ import math
 import json
 from experiment import utils
 from search_eval.datasets import base
-from experiment.models import bm25
-from sentence_transformers.evaluation import SentenceEvaluator
-from sentence_transformers import SentenceTransformer, SentencesDataset, LoggingHandler, losses, util, InputExample
+from experiment.index import bm25
+from experiment.encoders.tokenizer import Tokenizer
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from experiment.candidates import get_new_candidates
 from experiment.metrics import calc_metrics
 from omegaconf import DictConfig, OmegaConf
 import hydra
-from torch.utils.data import DataLoader
+
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
 
-class MyInformationRetrievalEvaluator(SentenceEvaluator):
-    """Class for evaluation during experiment
-    """
-    def __init__(self, ds_test:base.Dataset, queries_corpus, docs_corpus, cfg, name:str = 'sentence_transformer'):
-        self.ds_test = ds_test
-        self.vectorizer = None
-        self.queries_corpus = queries_corpus
-        self.docs_corpus = docs_corpus
-        self.reranker = None
-        self.cfg = cfg
-        self.name = name
 
-    def __call__(self, model, output_path: str = None, epoch: int = -1, steps: int = -1) -> float:
-        if epoch != -1:
-            out_txt = " after epoch {}:".format(epoch) if steps == -1 else " in epoch {} after {} steps:".format(epoch, steps)
-        else:
-            out_txt = ":"
-
-        logging.info(f"Information Retrieval Evaluation on dataset {out_txt}")
-        
-        ds_candidates = get_new_candidates(self.ds_test, self.queries_corpus, self.docs_corpus, model, self.cfg, self.cfg.models.senttrans.k)
-        metrics = calc_metrics(self.ds_test, ds_candidates)
-        data = {
-            "name": self.name,
-            "epoch": epoch,
-            "steps": steps,
-            "metrics": metrics,
-            "base_model": self.cfg.models.senttrans.base_model
-        }
-        self.save_report(data)
-        max_k = max(self.cfg.metrics.k)
-        return metrics[f"ndcg@{max_k}"]
-
-    def save_report(self, data):
-        with open(self.cfg.report.output_file, 'a') as f:
-            f.write("{}\n".format(json.dumps(data)))
 
 
 @hydra.main(config_name="config_encoder.yaml")
@@ -69,10 +33,24 @@ def main(cfg: DictConfig):
     ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
     ds_test = ds_test#[:200]
     logger.info(f"Train size {len(ds_train)}, Test size {len(ds_test)}")
-    logger.info("Init vectorizer model")
-    vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
-
-    evaluator = MyInformationRetrievalEvaluator(ds_test, queries_corpus, docs_corpus, cfg)
+    encoder = Tokenizer(cfg.encoders.tokenizer)
+    logger.info(f"Encode docs with {encoder.name}")
+    encoded_docs = encoder.encode(docs_corpus[ds_test.docs])
+    logger.info("Init bm25 model")
+    index = bm25.BM25()
+    logger.info(f"Indexing docs with {index.name}")
+    index.build(encoded_docs)
+    logger.info(f"Encode queries with {encoder.name}")
+    encoded_queries = encoder.encode(queries_corpus[ds_test.queries_uniq])
+    logger.info("Generate candidates for evaluation...")
+    ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.index.bm25.k)
+    metrics = calc_metrics(ds_test, ds_candidates)
+    data = {
+        "name": "BM25 test",
+        "metrics": metrics,
+        "base_model": ""
+    }
+    utils.save_report(cfg.report.output_file, data)
     
     logger.info('All done!')
 

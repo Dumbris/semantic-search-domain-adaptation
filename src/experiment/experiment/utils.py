@@ -8,6 +8,7 @@ import numpy as np
 import hydra
 import logging
 from search_eval.datasets import base
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +45,9 @@ def load_dataset(cfg):
         hd.save_to_cache(cache_path)
     logger.info(f"Loaded {len(hd)} items.")
     return hd, docs_corpus, queries_corpus
+
+
+
+def save_report(output_file, data):
+    with open(output_file, 'a') as f:
+        f.write("{}\n".format(json.dumps(data)))

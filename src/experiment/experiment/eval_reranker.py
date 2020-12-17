@@ -17,7 +17,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 from experiment.models.reranker import RerankerDataset, T2TDataCollator
-from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments
+from transformers import RobertaForSequenceClassification, Trainer, TrainingArguments, TrainerCallback
 from sentence_transformers import SentenceTransformer
 import dataclasses
 import json
@@ -26,6 +26,8 @@ from experiment.candidates import get_new_candidates
 from experiment.metrics import calc_metrics
 from experiment import utils
 from search_eval.datasets import base
+from experiment.encoders.sentence_transformer import SentTrans
+from experiment.index import ann
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -44,12 +46,34 @@ class MyRerankerMetrics:
         metrics = calc_metrics(self.ds_test, base.Dataset(self.ds_candidates.queries, self.ds_candidates.docs, preds))
         return metrics
 
+class SaveReportCallback(TrainerCallback):
+    def __init__(self, output_file, base_model, name="Reranker"):
+        self.output_file = output_file
+        self.base_model = base_model
+        self.name = name
+
+    def on_evaluate(self, args, state, control, metrics, **kwargs):
+        data = {
+            "name": self.name,
+            "epoch": state.epoch,
+            "steps": state.global_step,
+            "metrics": metrics,
+            "base_model": self.base_model
+        }
+        self.save_report(data)
+
+    def save_report(self, data):
+        with open(self.output_file, 'a') as f:
+            f.write("{}\n".format(json.dumps(data)))
+        
+
 def train_reranker(model, tokenizer,
                         ds_train, 
                         ds_candidates, 
                         queries_corpus, 
                         docs_corpus, 
                         compute_metrics,
+                        callbacks,
                         cfg):
     train_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
     test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_candidates.iterrows()])
@@ -57,14 +81,14 @@ def train_reranker(model, tokenizer,
     
     training_args = TrainingArguments(
         output_dir='results',          # output directory
-        num_train_epochs=3,              # total # of training epochs
-        per_device_train_batch_size=64,  # batch size per device during training
-        per_device_eval_batch_size=64,   # batch size for evaluation
+        num_train_epochs=cfg.num_epochs,              # total # of training epochs
+        per_device_train_batch_size=cfg.train_batch_size,  # batch size per device during training
+        per_device_eval_batch_size=cfg.train_batch_size,   # batch size for evaluation
         warmup_steps=100,                # number of warmup steps for learning rate scheduler
         weight_decay=0.01,               # strength of weight decay
         logging_dir='logs',            # directory for storing logs
         evaluation_strategy='steps',
-        eval_steps=500
+        eval_steps=cfg.eval_steps
     )
 
     trainer = Trainer(
@@ -74,6 +98,7 @@ def train_reranker(model, tokenizer,
         train_dataset=train_dataset,         # training dataset
         eval_dataset=test_dataset,            # evaluation dataset
         compute_metrics=compute_metrics,
+        callbacks=callbacks
         
     )
     trainer.train()
@@ -93,24 +118,37 @@ def main(cfg: DictConfig):
     ds_test = ds_test#[:200]
     logger.info(f"Train size {len(ds_train)}, Test size {len(ds_test)}")
     logger.info("Init vectorizer model")
-    vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
+    encoder = SentTrans(cfg.models.senttrans)
+    logger.info(f"Encode docs with {encoder.name}")
+    encoded_docs = encoder.encode(docs_corpus[ds_test.docs])
+    logger.info("Init HNSW index")
+    index = ann.HNSW(cfg.index.ann)
+    logger.info(f"Indexing docs with {index.name}")
+    index.build(encoded_docs)
+    logger.info(f"Encode queries with {encoder.name}")
+    encoded_queries = encoder.encode(queries_corpus[ds_test.queries_uniq])
+    logger.info("Generate candidates for evaluation...")
+    ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.reranker.k)    
+    #Evaluate candidates quality
+    metrics = calc_metrics(ds_test, ds_candidates)
+    data = {"name": "Reranker test before train", "metrics": metrics}
+    utils.save_report(cfg.report.output_file, data)
 
     logger.info("Init reranker model")
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
     reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
 
-    #Step 2. Reranking
-    ds_candidates = get_new_candidates(ds_test, queries_corpus, docs_corpus, vectorizer, cfg, cfg.reranker.k)
-    
     _metrics = MyRerankerMetrics(ds_test, ds_candidates, cfg, '@@@')
+    _savecallback = SaveReportCallback(cfg.report.output_file, cfg.reranker.base_model)
     #Reranker model
-    trainer = train_reranker(reranker, 
+    _ = train_reranker(reranker, 
                             tokenizer, 
                             ds_train.sample(cfg.reranker.train_sample), 
                             ds_candidates, 
                             queries_corpus, 
                             docs_corpus,
                             _metrics, 
+                            [_savecallback],
                             cfg.reranker)
 
     logger.info('All done!')

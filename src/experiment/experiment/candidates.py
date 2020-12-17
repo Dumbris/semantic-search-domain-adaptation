@@ -1,12 +1,24 @@
 import logging
 from search_eval.datasets import base
-from experiment.models import ann
 
 logger = logging.getLogger(__name__)
 
+
+def get_new_candidates(index, ds_test, encoded_queries, k:int=50):
+    candidates_pairs = []
+    for (score, idx), query in zip(index.generate_candidates(encoded_queries, k), ds_test.queries_uniq):
+        for doc_id, doc_relevancy in zip(ds_test.docs[idx], score):
+            candidates_pairs.append((query, doc_id, doc_relevancy))
+    
+    assert len(candidates_pairs) == k*len(ds_test.queries_uniq)
+
+    candidates_queries, candidates_docs, candidates_scores = zip(*candidates_pairs)
+
+    return base.Dataset(candidates_queries, candidates_docs, candidates_scores)
+
 #docs_corpus[ds.docs].tolist()
 #ds.docs[idx]
-def get_new_candidates(ds_test, queries_corpus, docs_corpus, vectorizer, cfg, k:int=50):
+def get_new_candidates2(index, ds_test, queries_corpus, docs_corpus, vectorizer, cfg, k:int=50):
     #Init index class
     index = ann.HNSWIndex(cfg.index.ann) #TODO: remove this dependency
     logger.info("Encode docs...")
