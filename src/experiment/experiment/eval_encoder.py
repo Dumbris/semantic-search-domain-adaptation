@@ -12,7 +12,6 @@ tqdm.tqdm = nop
 
 from experiment import utils
 from search_eval.datasets import base
-from experiment.models import ann
 from sentence_transformers.evaluation import SentenceEvaluator
 from sentence_transformers import SentenceTransformer, SentencesDataset, LoggingHandler, losses, util, InputExample
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -21,6 +20,8 @@ from experiment.metrics import calc_metrics
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from torch.utils.data import DataLoader
+from experiment.encoders.sentence_transformer import SentTrans
+from experiment.index import ann
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
@@ -28,13 +29,14 @@ logger = logging.getLogger()
 class MyInformationRetrievalEvaluator(SentenceEvaluator):
     """Class for evaluation during experiment
     """
-    def __init__(self, ds_test:base.Dataset, queries_corpus, docs_corpus, cfg, name:str = 'sentence_transformer'):
+    def __init__(self, index, ds_test:base.Dataset, queries_corpus, docs_corpus, report_file, max_k, k, name:str = 'sentence_transformer'):
+        self.index = index
         self.ds_test = ds_test
-        self.vectorizer = None
         self.queries_corpus = queries_corpus
         self.docs_corpus = docs_corpus
-        self.reranker = None
-        self.cfg = cfg
+        self.report_file = report_file
+        self.k = k
+        self.max_k = max_k
         self.name = name
 
     def __call__(self, model, output_path: str = None, epoch: int = -1, steps: int = -1) -> float:
@@ -45,22 +47,24 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
 
         logging.info(f"Information Retrieval Evaluation on dataset {out_txt}")
         
-        ds_candidates = get_new_candidates(self.ds_test, self.queries_corpus, self.docs_corpus, model, self.cfg, self.cfg.models.senttrans.k)
+        
+        encoded_docs = model.encode(self.docs_corpus[self.ds_test.docs])
+        logger.info(f"Indexing docs with {self.index.name}")
+        self.index.build(encoded_docs)
+        encoded_queries = model.encode(self.queries_corpus[self.ds_test.queries_uniq])
+        logger.info("Generate candidates for evaluation...")
+        ds_candidates = get_new_candidates(self.index, self.ds_test, encoded_queries, self.k)
+        logger.info(f"Got {len(ds_candidates.docs)} candidate pairs")
         metrics = calc_metrics(self.ds_test, ds_candidates)
         data = {
             "name": self.name,
             "epoch": epoch,
             "steps": steps,
             "metrics": metrics,
-            "base_model": self.cfg.models.senttrans.base_model
+            "base_model": "-"
         }
-        self.save_report(data)
-        max_k = max(self.cfg.metrics.k)
-        return metrics[f"ndcg@{max_k}"]
-
-    def save_report(self, data):
-        with open(self.cfg.report.output_file, 'a') as f:
-            f.write("{}\n".format(json.dumps(data)))
+        utils.save_report(self.report_file, data)
+        return metrics[f"ndcg@{self.max_k}"]
 
 
 def train_sentencetrans(model, 
@@ -103,13 +107,24 @@ def main(cfg: DictConfig):
     ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
     ds_test = ds_test#[:200]
     logger.info(f"Train size {len(ds_train)}, Test size {len(ds_test)}")
-    logger.info("Init vectorizer model")
-    vectorizer = SentenceTransformer(cfg.models.senttrans.base_model)
+    
+    logger.info("Init HNSW index")
+    index = ann.HNSW(cfg.index.ann)
 
-    evaluator = MyInformationRetrievalEvaluator(ds_test, queries_corpus, docs_corpus, cfg)
+    evaluator = MyInformationRetrievalEvaluator(index, 
+                                                ds_test, 
+                                                queries_corpus, 
+                                                docs_corpus,
+                                                cfg.report.output_file, 
+                                                max(cfg.metrics.k), 
+                                                cfg.models.senttrans.k
+                                                )
     #Create vectorizer object
+
+    logger.info("Init vectorizer model")
+    encoder = SentTrans(cfg.models.senttrans)
     logger.info(f"Start vectorizer training...")
-    train_sentencetrans(vectorizer,
+    train_sentencetrans(encoder.encoder,
                         evaluator,
                         ds_train.sample(cfg.models.senttrans.train_sample), 
                         ds_test, 

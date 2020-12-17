@@ -18,7 +18,7 @@ models:
     model_save_path: "mydistilroberta"
     train_sample: false
     train_batch_size: 64
-    num_epochs: 4
+    num_epochs: 2
     k: 50
     evaluation_steps: 500
 
@@ -30,6 +30,7 @@ reranker:
   train_sample: false
   num_epochs: 2
   k: 50
+  evaluation_steps: 500
 
 metrics:
   k: [3,5,10]

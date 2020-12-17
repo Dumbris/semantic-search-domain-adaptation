@@ -33,6 +33,10 @@ from experiment.index import ann
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger()
 
+def clean_pref(metrics:List) -> List:
+    prefix = "eval_"
+    return {key[len(prefix):]:val for key, val in metrics.items() if key.startswith(prefix)}
+
 class MyRerankerMetrics:
     def __init__(self, ds_test:base.Dataset, ds_candidates:base.Dataset, cfg, name:str = 'reranker'):
         self.ds_test = ds_test
@@ -57,7 +61,7 @@ class SaveReportCallback(TrainerCallback):
             "name": self.name,
             "epoch": state.epoch,
             "steps": state.global_step,
-            "metrics": metrics,
+            "metrics": clean_pref(metrics),
             "base_model": self.base_model
         }
         self.save_report(data)
@@ -101,9 +105,6 @@ def train_reranker(model, tokenizer,
         callbacks=callbacks
         
     )
-    trainer.train()
-    logger.info(trainer.evaluate())
-    #trainer.save_model(cfg.model_save_path)
     return trainer
     
 @hydra.main(config_name="config_reranker.yaml")
@@ -128,11 +129,8 @@ def main(cfg: DictConfig):
     logger.info(f"Encode queries with {encoder.name}")
     encoded_queries = encoder.encode(queries_corpus[ds_test.queries_uniq])
     logger.info("Generate candidates for evaluation...")
-    ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.reranker.k)    
-    #Evaluate candidates quality
-    metrics = calc_metrics(ds_test, ds_candidates)
-    data = {"name": "Reranker test before train", "metrics": metrics}
-    utils.save_report(cfg.report.output_file, data)
+    ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.reranker.k)
+    logger.info(f"Got {len(ds_candidates.docs)} candidate pairs")
 
     logger.info("Init reranker model")
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
@@ -141,7 +139,7 @@ def main(cfg: DictConfig):
     _metrics = MyRerankerMetrics(ds_test, ds_candidates, cfg, '@@@')
     _savecallback = SaveReportCallback(cfg.report.output_file, cfg.reranker.base_model)
     #Reranker model
-    _ = train_reranker(reranker, 
+    trainer = train_reranker(reranker, 
                             tokenizer, 
                             ds_train.sample(cfg.reranker.train_sample), 
                             ds_candidates, 
@@ -150,7 +148,16 @@ def main(cfg: DictConfig):
                             _metrics, 
                             [_savecallback],
                             cfg.reranker)
-
+    
+    logger.info("Evaluate candidates quality, before training")
+    #Evaluate candidates quality
+    data = {"name": "Reranker test before train", "metrics": calc_metrics(ds_test, ds_candidates)}
+    utils.save_report(cfg.report.output_file, data)
+    #Do actual training
+    trainer.train()
+    #trainer.save_model(cfg.model_save_path)
+    data = {"name": "Reranker test after train", "metrics": clean_pref(trainer.evaluate())}
+    utils.save_report(cfg.report.output_file, data)
     logger.info('All done!')
 
 

@@ -6,7 +6,7 @@ dataset:
   cache_path: "hd_cache.npz"
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
-  sample: 100
+  sample: 5000
   test_size: 0.5
 models:
   senttrans:
@@ -20,7 +20,7 @@ reranker:
   train_sample: false
   num_epochs: 2
   eval_steps: 500
-  k: 10
+  k: 50
 
 metrics:
   k: [3,5,10]
