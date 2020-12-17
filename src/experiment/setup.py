@@ -50,6 +50,7 @@ setup(
             'eval_encoder=experiment.eval_encoder:entry',
             'eval_reranker=experiment.eval_reranker:entry',
             'eval_bm25=experiment.eval_bm25:entry',
+            'eval_uset=experiment.eval_uset:entry'
         ]
     }
 )
