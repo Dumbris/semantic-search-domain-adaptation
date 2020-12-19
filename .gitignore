@@ -113,4 +113,7 @@ Pipfile
 /data
 /*.npz
 outputs/
+multirun/
 /output.json
+/report_*.jsonl
+/*.npy
