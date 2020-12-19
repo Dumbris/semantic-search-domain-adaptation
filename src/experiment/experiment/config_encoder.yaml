@@ -7,12 +7,11 @@ dataset:
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
   sample: false
-  test_size: 0.4
+  test_size: 0.3
 encoders:
   tokenizer:
     spacy_model_name: "en_core_web_sm"
 models:
-  bm25: test_size
   senttrans:
     base_model: 'distilroberta-base-msmarco-v2'
     model_save_path: "mydistilroberta"
@@ -38,8 +37,8 @@ metrics:
 index:
   ann:
     dim: 768
-    space: 'cosine'
-    ef_construction: 400
+    space: 'l2'
+    ef_construction: 500
     M: 64
     k: 50
   bm25:

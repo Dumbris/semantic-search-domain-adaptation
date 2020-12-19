@@ -29,7 +29,16 @@ logger = logging.getLogger()
 class MyInformationRetrievalEvaluator(SentenceEvaluator):
     """Class for evaluation during experiment
     """
-    def __init__(self, index, ds_test:base.Dataset, queries_corpus, docs_corpus, report_file, max_k, k, name:str = 'sentence_transformer'):
+    def __init__(self, 
+                    index, 
+                    ds_test:base.Dataset, 
+                    queries_corpus, 
+                    docs_corpus, 
+                    report_file, 
+                    max_k, 
+                    k, 
+                    base_model: str,
+                    name:str = 'sentence_transformer'):
         self.index = index
         self.ds_test = ds_test
         self.queries_corpus = queries_corpus
@@ -38,6 +47,7 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
         self.k = k
         self.max_k = max_k
         self.name = name
+        self.base_model = base_model #For logging
 
     def __call__(self, model, output_path: str = None, epoch: int = -1, steps: int = -1) -> float:
         if epoch != -1:
@@ -61,7 +71,7 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
             "epoch": epoch,
             "steps": steps,
             "metrics": metrics,
-            "base_model": "-"
+            "base_model": self.base_model
         }
         utils.save_report(self.report_file, data)
         return metrics[f"ndcg@{self.max_k}"]
@@ -117,7 +127,8 @@ def main(cfg: DictConfig):
                                                 docs_corpus,
                                                 cfg.report.output_file, 
                                                 max(cfg.metrics.k), 
-                                                cfg.models.senttrans.k
+                                                cfg.models.senttrans.k,
+                                                cfg.models.senttrans.base_model
                                                 )
     #Create vectorizer object
 

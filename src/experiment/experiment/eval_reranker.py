@@ -51,7 +51,7 @@ class MyRerankerMetrics:
         return metrics
 
 class SaveReportCallback(TrainerCallback):
-    def __init__(self, output_file, base_model, name="Reranker"):
+    def __init__(self, output_file, base_model, name="reranker"):
         self.output_file = output_file
         self.base_model = base_model
         self.name = name
@@ -67,8 +67,7 @@ class SaveReportCallback(TrainerCallback):
         self.save_report(data)
 
     def save_report(self, data):
-        with open(self.output_file, 'a') as f:
-            f.write("{}\n".format(json.dumps(data)))
+        utils.save_report(self.output_file, data)
         
 
 def train_reranker(model, tokenizer,
@@ -151,12 +150,16 @@ def main(cfg: DictConfig):
     
     logger.info("Evaluate candidates quality, before training")
     #Evaluate candidates quality
-    data = {"name": "Reranker test before train", "metrics": calc_metrics(ds_test, ds_candidates)}
+    data = {"name": "Reranker@pre-train", 
+            "metrics": calc_metrics(ds_test, ds_candidates), 
+            "base_model":cfg.reranker.base_model}
     utils.save_report(cfg.report.output_file, data)
     #Do actual training
     trainer.train()
     #trainer.save_model(cfg.model_save_path)
-    data = {"name": "Reranker test after train", "metrics": clean_pref(trainer.evaluate())}
+    data = {"name": "Reranker@post-train", 
+            "metrics": clean_pref(trainer.evaluate()),
+            "base_model":cfg.reranker.base_model}
     utils.save_report(cfg.report.output_file, data)
     logger.info('All done!')
 

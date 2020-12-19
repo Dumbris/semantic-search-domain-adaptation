@@ -47,9 +47,9 @@ def main(cfg: DictConfig):
     ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.index.bm25.k)
     metrics = calc_metrics(ds_test, ds_candidates)
     data = {
-        "name": "USET test",
+        "name": "USET",
         "metrics": metrics,
-        "base_model": ""
+        "base_model": encoder.name
     }
     utils.save_report(cfg.report.output_file, data)
     

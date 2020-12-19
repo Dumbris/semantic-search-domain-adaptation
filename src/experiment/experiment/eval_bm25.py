@@ -46,7 +46,7 @@ def main(cfg: DictConfig):
     ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.index.bm25.k)
     metrics = calc_metrics(ds_test, ds_candidates)
     data = {
-        "name": "BM25 test",
+        "name": "BM25",
         "metrics": metrics,
         "base_model": ""
     }
