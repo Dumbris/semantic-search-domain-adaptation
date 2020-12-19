@@ -8,14 +8,19 @@ set -ex
 
 ###Global vars declaration
 readonly HOMEDIR="${PWD}"
+readonly REPORTSDIR="${1:=outputs}"
+readonly DATE=$(date '+%Y_%m_%d__%H_%M_%S')
+
+[ ! -d "$REPORTSDIR" ] && echo "No reports dir" && exit 1
 
 function extract_info()
 {
     local dir="$1"
-    #cd $dir
-    local config=$(yq -c . "$dir/.hydra/config.yaml")
-    local overrides=$(yq -c . "$dir/.hydra/overrides.yaml")
-    if [ -f "$dir/output.json" ];then
+    local config
+    local overrides
+    if [[ -d "$dir" && -f "$dir/output.json" && -d "$dir/.hydra" ]];then
+        config=$(yq -c . "$dir/.hydra/config.yaml")
+        overrides=$(yq -c . "$dir/.hydra/overrides.yaml")
         jq -c --argjson config "${config}" \
             --argjson overrides "${overrides}" \
             --arg dir "${dir}" \
@@ -24,11 +29,11 @@ function extract_info()
     fi
 }
 
-dirlist=$(find "${HOMEDIR}/outputs" -mindepth 2 -maxdepth 2 -type d)
+dirlist=$(find "${REPORTSDIR}" -mindepth 1 -maxdepth 2 -type d)
 
 for dir in $dirlist
 do
   (
       extract_info $dir
   )
-done > output.json
+done > "report_${DATE}.jsonl"
