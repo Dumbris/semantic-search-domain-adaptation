@@ -16,5 +16,5 @@ readonly EXPRIMENT_DIR="${REPORTSDIR}/eval_01"
 
 source "${VIRT_ENV_DIR}/bin/activate"
 
-eval_reranker -m reranker.base_model=distilbert-base-uncased,roberta-base hydra.sweep.dir="${EXPRIMENT_DIR}"
+eval_reranker -m reranker.base_model=distilroberta-base,roberta-base hydra.sweep.dir="${EXPRIMENT_DIR}"
 ./collect_results.sh "${EXPRIMENT_DIR}"
