@@ -5,14 +5,6 @@ import sys
 import os
 import logging
 import numpy as np
-
-import tqdm
-
-def nop(it, *a, **k):
-    return it
-tqdm.tqdm = nop
-
-
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from transformers import AutoModel, AutoTokenizer, AutoConfig
