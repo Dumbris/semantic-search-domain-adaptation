@@ -101,6 +101,7 @@ def train_sentencetrans(model,
         epochs=cfg.num_epochs,
         evaluation_steps=cfg.evaluation_steps,
         warmup_steps=warmup_steps,
+        save_best_model=False,
         output_path=cfg.model_save_path)
 
     return model
