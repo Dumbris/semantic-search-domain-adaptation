@@ -38,9 +38,9 @@ class MyRerankerMetrics:
 
 
     def __call__(self, pred):
-        label_ids = pred.label_ids
+        #label_ids = pred.label_ids
         preds = pred.predictions.reshape(-1)
-        np.testing.assert_equal(label_ids, self.ds_candidates.relevance)
+        #np.testing.assert_equal(label_ids, self.ds_candidates.relevance)
         metrics = calc_metrics(self.ds_test, base.Dataset(self.ds_candidates.queries, self.ds_candidates.docs, preds))
         return metrics
 
