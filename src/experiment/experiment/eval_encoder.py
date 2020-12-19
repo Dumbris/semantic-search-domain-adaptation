@@ -4,12 +4,6 @@ import numpy as np
 import logging
 import math
 import json
-import tqdm
-
-def nop(it, *a, **k):
-    return it
-tqdm.tqdm = nop
-
 from experiment import utils
 from search_eval.datasets import base
 from sentence_transformers.evaluation import SentenceEvaluator
