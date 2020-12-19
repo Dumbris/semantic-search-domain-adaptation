@@ -20,6 +20,8 @@ from experiment import utils
 from search_eval.datasets import base
 from experiment.encoders.sentence_transformer import SentTrans
 from experiment.index import ann
+from experiment.index import bm25
+from experiment.encoders.tokenizer import Tokenizer
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -83,7 +85,8 @@ def train_reranker(model, tokenizer,
         weight_decay=0.01,               # strength of weight decay
         logging_dir='logs',            # directory for storing logs
         evaluation_strategy='steps',
-        eval_steps=cfg.eval_steps
+        eval_steps=cfg.eval_steps,
+        save_steps=2000000 #Never save checkpoins
     )
 
     trainer = Trainer(
@@ -109,12 +112,20 @@ def main(cfg: DictConfig):
     ds_test, ds_train = dataset.split_train_test(cfg.dataset.test_size)
     ds_test = ds_test#[:200]
     logger.info(f"Train size {len(ds_train)}, Test size {len(ds_test)}")
-    logger.info("Init vectorizer model")
-    encoder = SentTrans(cfg.models.senttrans)
+    USE_BM25=True
+    if USE_BM25:
+        logger.info("Init tokenizer model")
+        encoder = Tokenizer(cfg.encoders.tokenizer)
+        logger.info("Init bm25 model")
+        index = bm25.BM25()
+    else:
+        logger.info("Init vectorizer model")
+        encoder = SentTrans(cfg.models.senttrans)
+        logger.info("Init HNSW index")
+        index = ann.HNSW(cfg.index.ann)
+
     logger.info(f"Encode docs with {encoder.name}")
     encoded_docs = encoder.encode(docs_corpus[ds_test.docs])
-    logger.info("Init HNSW index")
-    index = ann.HNSW(cfg.index.ann)
     logger.info(f"Indexing docs with {index.name}")
     index.build(encoded_docs)
     logger.info(f"Encode queries with {encoder.name}")

@@ -8,6 +8,9 @@ dataset:
   queries_corpus_path: "hd_queries_corpus.npy"
   sample: false
   test_size: 0.3
+encoders:
+  tokenizer:
+    spacy_model_name: "en_core_web_sm"
 models:
   senttrans:
     base_model: 'distilroberta-base-msmarco-v2'
