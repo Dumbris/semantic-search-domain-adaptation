@@ -4,6 +4,7 @@ import numpy as np
 import logging
 import math
 import json
+import random
 from experiment import utils
 from search_eval.datasets import base
 from sentence_transformers.evaluation import SentenceEvaluator
@@ -79,15 +80,25 @@ def train_sentencetrans(model,
                         docs_corpus, 
                         cfg):
     train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_train.iterrows()]
+    #Random negative sampling
+    train_queries_set = set(ds_train.queries_uniq.tolist())
+    negative_train_samples = []
+    for query, doc, _ in ds_train.iterrows():
+        tset = train_queries_set.copy()
+        tset.remove(query)
+        new_query = random.choice(tuple(tset))
+        example = InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=0.0)
+        negative_train_samples.append(example)
+
     #dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
-    train_dataset = SentencesDataset(train_samples, model)
+    train_dataset = SentencesDataset(train_samples+negative_train_samples, model)
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
     train_loss = losses.CosineSimilarityLoss(model=model)
     # Development set: Measure correlation between cosine score and gold labels
     ###evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')
     
     # Configure the training. We skip evaluation in this example
-    warmup_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * 0.05) #5% of train data for warm-up
+    warmup_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * 0.10) #5% of train data for warm-up
     logging.info("Warmup-steps: {}".format(warmup_steps))
 
     model.fit(train_objectives=[(train_dataloader, train_loss)],
