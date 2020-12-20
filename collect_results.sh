@@ -29,11 +29,11 @@ function extract_info()
     fi
 }
 
-dirlist=$(find "${REPORTSDIR}" -mindepth 1 -maxdepth 2 -type d)
+dirlist=$(find "${REPORTSDIR}" -mindepth 1 -maxdepth 3 -type d)
 
 for dir in $dirlist
 do
   (
-      extract_info $dir
+      extract_info "${dir}"
   )
 done > "report_${DATE}.jsonl"
