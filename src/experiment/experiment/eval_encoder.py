@@ -71,6 +71,8 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
         utils.save_report(self.report_file, data)
         return metrics[f"ndcg@{self.max_k}"]
 
+def relevancy_round(x):
+    return round(x*3)
 
 def train_sentencetrans(model, 
                         evaluator, 
@@ -79,7 +81,7 @@ def train_sentencetrans(model,
                         queries_corpus, 
                         docs_corpus, 
                         cfg):
-    train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_train.iterrows()]
+    train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy_round(relevancy)) for query, doc, relevancy in ds_train.iterrows()]
     #Random negative sampling
     train_queries_set = set(ds_train.queries_uniq.tolist())
     negative_train_samples = []
@@ -87,13 +89,18 @@ def train_sentencetrans(model,
         tset = train_queries_set.copy()
         tset.remove(query)
         new_query = random.choice(tuple(tset))
-        example = InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=0.0)
+        example = InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=relevancy_round(0.0))
         negative_train_samples.append(example)
 
     #dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
     train_dataset = SentencesDataset(train_samples+negative_train_samples, model)
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
-    train_loss = losses.CosineSimilarityLoss(model=model)
+    
+    train_num_labels = 4
+    train_loss = losses.SoftmaxLoss(model=model, sentence_embedding_dimension=model.get_sentence_embedding_dimension(), num_labels=train_num_labels)
+
+    #train_loss = losses.CosineSimilarityLoss(model=model)
+
     # Development set: Measure correlation between cosine score and gold labels
     ###evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')
     
