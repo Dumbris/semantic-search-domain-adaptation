@@ -72,7 +72,7 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
         return metrics[f"ndcg@{self.max_k}"]
 
 def relevancy_round(x):
-    return round(x*3)
+    return round(x*3) #TODO: fix, suiatble only for one dataset
 
 def train_sentencetrans(model, 
                         evaluator, 
@@ -81,25 +81,29 @@ def train_sentencetrans(model,
                         queries_corpus, 
                         docs_corpus, 
                         cfg):
-    train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy_round(relevancy)) for query, doc, relevancy in ds_train.iterrows()]
+    train_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_train.iterrows()]
     #Random negative sampling
-    train_queries_set = set(ds_train.queries_uniq.tolist())
     negative_train_samples = []
-    for query, doc, _ in ds_train.iterrows():
-        tset = train_queries_set.copy()
-        tset.remove(query)
-        new_query = random.choice(tuple(tset))
-        example = InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=relevancy_round(0.0))
-        negative_train_samples.append(example)
-
+    if cfg.num_negative_samples and cfg.num_negative_samples > 0:
+        train_queries = ds_train.queries_uniq.copy()
+        for query, doc, _ in ds_train.iterrows():
+            samples = np.random.choice(train_queries, cfg.num_negative_samples, replace=False)
+            samples = samples[samples != query] #Remove positive sample
+            for new_query in samples:
+                negative_train_samples.append(InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=0.0))
+        train_samples.extend(negative_train_samples)
     #dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
-    train_dataset = SentencesDataset(train_samples+negative_train_samples, model)
+    train_dataset = SentencesDataset(train_samples, model)
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
     
-    train_num_labels = 4
-    train_loss = losses.SoftmaxLoss(model=model, sentence_embedding_dimension=model.get_sentence_embedding_dimension(), num_labels=train_num_labels)
+    if cfg.loss == "SoftmaxLoss":
+        train_num_labels = 4 #TODO: fix, suiatble only for one dataset
+        train_loss = losses.SoftmaxLoss(model=model, sentence_embedding_dimension=model.get_sentence_embedding_dimension(), num_labels=train_num_labels)
+        train_samples = [InputExample(texts=example_obj.texts, label=relevancy_round(example_obj.label)) for example_obj in train_samples]
 
-    #train_loss = losses.CosineSimilarityLoss(model=model)
+
+    if cfg.loss == "CosineSimilarityLoss":
+        train_loss = losses.CosineSimilarityLoss(model=model)
 
     # Development set: Measure correlation between cosine score and gold labels
     ###evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')

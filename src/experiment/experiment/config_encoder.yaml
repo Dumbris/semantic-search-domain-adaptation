@@ -14,7 +14,9 @@ encoders:
 models:
   senttrans:
     base_model: 'distilroberta-base-msmarco-v2'
+    loss: "SoftmaxLoss" #"CosineSimilarityLoss"
     model_save_path: "mydistilroberta"
+    num_negative_samples: 3
     train_sample: false
     train_batch_size: 64
     num_epochs: 2
