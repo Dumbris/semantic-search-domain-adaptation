@@ -72,7 +72,7 @@ class MyInformationRetrievalEvaluator(SentenceEvaluator):
         return metrics[f"ndcg@{self.max_k}"]
 
 def relevancy_round(x):
-    return round(x*3) #TODO: fix, suiatble only for one dataset
+    return round(x*2) #TODO: fix, suiatble only for one dataset
 
 def train_sentencetrans(model, 
                         evaluator, 
@@ -91,13 +91,12 @@ def train_sentencetrans(model,
             samples = samples[samples != query] #Remove positive sample
             for new_query in samples:
                 negative_train_samples.append(InputExample(texts=[queries_corpus[new_query], docs_corpus[doc]], label=0.0))
+        logger.info(f"{len(negative_train_samples)} samples added")
         train_samples.extend(negative_train_samples)
     #dev_samples = [InputExample(texts=[queries_corpus[query], docs_corpus[doc]], label=relevancy) for query, doc, relevancy in ds_test.iterrows()]
-    train_dataset = SentencesDataset(train_samples, model)
-    train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
     
     if cfg.loss == "SoftmaxLoss":
-        train_num_labels = 4 #TODO: fix, suiatble only for one dataset
+        train_num_labels = 3 #TODO: fix, suiatble only for one dataset
         train_loss = losses.SoftmaxLoss(model=model, sentence_embedding_dimension=model.get_sentence_embedding_dimension(), num_labels=train_num_labels)
         train_samples = [InputExample(texts=example_obj.texts, label=relevancy_round(example_obj.label)) for example_obj in train_samples]
 
@@ -107,15 +106,19 @@ def train_sentencetrans(model,
 
     # Development set: Measure correlation between cosine score and gold labels
     ###evaluator = EmbeddingSimilarityEvaluator.from_input_examples(dev_samples, name='home-depot-dev')
+    logger.info(f"Train model using {len(train_samples)} samples in total")
+    train_dataset = SentencesDataset(train_samples, model)
+    train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=cfg.train_batch_size)
     
     # Configure the training. We skip evaluation in this example
     warmup_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * 0.10) #5% of train data for warm-up
     logging.info("Warmup-steps: {}".format(warmup_steps))
-
+    evaluation_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * cfg.evaluation_steps)
+    logging.info("Eval-steps: {}".format(evaluation_steps))
     model.fit(train_objectives=[(train_dataloader, train_loss)],
         evaluator=evaluator,
         epochs=cfg.num_epochs,
-        evaluation_steps=cfg.evaluation_steps,
+        evaluation_steps=evaluation_steps,
         warmup_steps=warmup_steps,
         save_best_model=False,
         output_path=cfg.model_save_path)

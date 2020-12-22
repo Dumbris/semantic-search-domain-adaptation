@@ -39,7 +39,7 @@ def import_from_disk(dirpath:Path, normalize=True):
     queries = df_all.search_term.values
     docs = df_all.product_title.values
     if normalize:
-        relevance = df_all.relevance.values / 3.0
+        relevance = (df_all.relevance.values - 1) / 2.0
     else:
-        relevance = df_all.relevance.values
+        relevance = df_all.relevance.values - 1
     return queries, docs, relevance

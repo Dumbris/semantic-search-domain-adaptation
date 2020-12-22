@@ -7,7 +7,7 @@ dataset:
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
   sample: false
-  test_size: 0.3
+  test_size: 0.2
 encoders:
   tokenizer:
     spacy_model_name: "en_core_web_sm"
@@ -16,12 +16,12 @@ models:
     base_model: 'distilroberta-base-msmarco-v2'
     loss: "SoftmaxLoss" #"CosineSimilarityLoss"
     model_save_path: "mydistilroberta"
-    num_negative_samples: 3
+    num_negative_samples: 2
     train_sample: false
     train_batch_size: 64
     num_epochs: 2
-    k: 50
-    evaluation_steps: 500
+    k: 70
+    evaluation_steps: 0.10
 
 reranker:
   base_model: 'roberta-base'
@@ -42,7 +42,7 @@ index:
     space: 'l2'
     ef_construction: 500
     M: 64
-    k: 50
+    k: 70
   bm25:
     k: 50
 
