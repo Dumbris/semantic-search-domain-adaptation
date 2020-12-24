@@ -35,5 +35,6 @@ class T2TDataCollator:
         input_encodings = self.tokenizer.batch_encode_plus([[example['query'],example['doc']] for example in batch], 
                                                       padding=True, max_length=self.cfg.max_seq_length, truncation=True, return_tensors='pt')
         if 'label' in batch[0]:
-            input_encodings['labels'] = torch.tensor([float(example['label']) for example in batch],dtype=torch.float)
+            #input_encodings['labels'] = torch.tensor([float(example['label']) for example in batch],dtype=torch.float)
+            input_encodings['labels'] = torch.tensor([example['label'] for example in batch],dtype=torch.long)
         return input_encodings

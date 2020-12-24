@@ -5,6 +5,7 @@ import sys
 import os
 import logging
 import numpy as np
+import math
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from transformers import AutoModel, AutoTokenizer, AutoConfig
@@ -22,6 +23,8 @@ from experiment.encoders.sentence_transformer import SentTrans
 from experiment.index import ann
 from experiment.index import bm25
 from experiment.encoders.tokenizer import Tokenizer
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, f1_score
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -38,11 +41,20 @@ class MyRerankerMetrics:
 
 
     def __call__(self, pred):
-        #label_ids = pred.label_ids
-        preds = pred.predictions.reshape(-1)
+        labels = pred.label_ids
+        #preds = pred.predictions.reshape(-1)
+        preds = pred.predictions.argmax(-1)
+        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='micro')
+        acc = accuracy_score(labels, preds)
+        metrics = {
+            'accuracy': acc,
+            'f1': f1,
+            'precision': precision,
+            'recall': recall
+        }
         #np.testing.assert_equal(label_ids, self.ds_candidates.relevance)
-        metrics = calc_metrics(self.ds_test, base.Dataset(self.ds_candidates.queries, self.ds_candidates.docs, preds))
-        return metrics
+        mymetrics = calc_metrics(self.ds_test, base.Dataset(self.ds_candidates.queries, self.ds_candidates.docs, preds))
+        return {**mymetrics, **metrics}
 
 class SaveReportCallback(TrainerCallback):
     def __init__(self, output_file, base_model, name="reranker"):
@@ -63,6 +75,8 @@ class SaveReportCallback(TrainerCallback):
     def save_report(self, data):
         utils.save_report(self.output_file, data)
         
+def relevancy_round(x):
+    return round(x*2) #TODO: fix, suiatble only for one dataset
 
 def train_reranker(model, tokenizer,
                         ds_train, 
@@ -72,20 +86,25 @@ def train_reranker(model, tokenizer,
                         compute_metrics,
                         callbacks,
                         cfg):
-    train_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_train.iterrows()])
-    test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy) for query, doc, relevancy in ds_candidates.iterrows()])
+    train_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy_round(relevancy)) for query, doc, relevancy in ds_train.iterrows()])
+    test_dataset = RerankerDataset([dict(query=queries_corpus[query], doc=docs_corpus[doc], label=relevancy_round(relevancy)) for query, doc, relevancy in ds_candidates.iterrows()])
     logger.info(f"Reranker test dataset {len(test_dataset)} items, train dataset {len(train_dataset)} items")
     
+    warmup_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * 0.10) #5% of train data for warm-up
+    logging.info("Warmup-steps: {}".format(warmup_steps))
+    evaluation_steps = math.ceil(len(train_dataset) * cfg.num_epochs / cfg.train_batch_size * cfg.eval_steps)
+    logging.info("Eval-steps: {}".format(evaluation_steps))
+
     training_args = TrainingArguments(
         output_dir='results',          # output directory
         num_train_epochs=cfg.num_epochs,              # total # of training epochs
         per_device_train_batch_size=cfg.train_batch_size,  # batch size per device during training
         per_device_eval_batch_size=cfg.train_batch_size,   # batch size for evaluation
-        warmup_steps=100,                # number of warmup steps for learning rate scheduler
+        warmup_steps=warmup_steps,                # number of warmup steps for learning rate scheduler
         weight_decay=0.01,               # strength of weight decay
         logging_dir='logs',            # directory for storing logs
         evaluation_strategy='steps',
-        eval_steps=cfg.eval_steps,
+        eval_steps=evaluation_steps,
         save_steps=2000000 #Never save checkpoins
     )
 
@@ -100,7 +119,12 @@ def train_reranker(model, tokenizer,
         
     )
     return trainer
-    
+
+def minmax_scale(X, min=0, max=2):
+    X_std = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
+    X_scaled = X_std * (max - min) + min
+    return X_scaled
+
 @hydra.main(config_name="config_reranker.yaml")
 def main(cfg: DictConfig):
     #Fixing seed
@@ -132,11 +156,13 @@ def main(cfg: DictConfig):
     encoded_queries = encoder.encode(queries_corpus[ds_test.queries_uniq])
     logger.info("Generate candidates for evaluation...")
     ds_candidates = get_new_candidates(index, ds_test, encoded_queries, cfg.reranker.k)
+    ds_candidates.relevance = minmax_scale(ds_candidates.relevance)
+
     logger.info(f"Got {len(ds_candidates.docs)} candidate pairs")
 
     logger.info("Init reranker model")
     tokenizer = AutoTokenizer.from_pretrained(cfg.reranker.base_model)
-    reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=1)
+    reranker = RobertaForSequenceClassification.from_pretrained(cfg.reranker.base_model, num_labels=3)
 
     _metrics = MyRerankerMetrics(ds_test, ds_candidates, cfg, '@@@')
     _savecallback = SaveReportCallback(cfg.report.output_file, cfg.reranker.base_model)
@@ -151,19 +177,24 @@ def main(cfg: DictConfig):
                             [_savecallback],
                             cfg.reranker)
     
-    logger.info("Evaluate candidates quality, before training")
+    
     #Evaluate candidates quality
+    """
+    logger.info("Evaluate candidates quality, before training")
     data = {"name": "Reranker@pre-train", 
             "metrics": calc_metrics(ds_test, ds_candidates), 
             "base_model":cfg.reranker.base_model}
     utils.save_report(cfg.report.output_file, data)
+    """
     #Do actual training
     trainer.train()
     #trainer.save_model(cfg.model_save_path)
+    """
     data = {"name": "Reranker@post-train", 
             "metrics": clean_pref(trainer.evaluate()),
             "base_model":cfg.reranker.base_model}
     utils.save_report(cfg.report.output_file, data)
+    """
     logger.info('All done!')
 
 
