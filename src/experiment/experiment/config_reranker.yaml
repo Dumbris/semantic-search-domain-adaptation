@@ -6,8 +6,8 @@ dataset:
   cache_path: "hd_cache.npz"
   docs_corpus_path: "hd_docs_corpus.npy"
   queries_corpus_path: "hd_queries_corpus.npy"
-  sample: false
-  test_size: 0.3
+  sample: 3000
+  test_size: 0.2
 encoders:
   tokenizer:
     spacy_model_name: "en_core_web_sm"
@@ -18,11 +18,11 @@ reranker:
   #base_model: 'roberta-base'
   base_model: 'sentence-transformers/distilbert-base-nli-stsb-mean-tokens'
   model_save_path: "myroberta"
-  max_seq_length: 200
-  train_batch_size: 64
+  max_seq_length: 100
+  train_batch_size: 16
   train_sample: false
   num_epochs: 2
-  eval_steps: 500
+  eval_steps: 0.10
   k: 50
 
 metrics:
