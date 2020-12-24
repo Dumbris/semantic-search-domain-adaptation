@@ -13,7 +13,7 @@ My initial plan is to use Home Depot dataset for finetuning/training and testing
 ## Runing expreriments
 * Install python package using pip, and run command with default config:
   <pre>
-  eval_cli
+  eval_encoder
   </pre>
 
 * You can override any config option using command line, and use multirun feature to run many experiments:
