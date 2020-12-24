@@ -11,7 +11,8 @@ install_requires = [
     'hydra-core',
     'sentence_transformers', 
     'scipy',
-    'hnswlib'
+    'hnswlib',
+    'sklearn'
 ]
 
 if sys.version_info < (2, 7):
